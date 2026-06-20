@@ -14,7 +14,7 @@ pip install quantstats-pro   # replaces: pip install quantstats
 import quantstats as qs       # import unchanged
 ```
 
-[Changelog »](./CHANGELOG.md) · [Upstream »](https://github.com/ranaroussi/quantstats) · [Decisions »](./docs/adr/)
+[Changelog »](./CHANGELOG.md) · [Upstream »](https://github.com/ranaroussi/quantstats)
 
 ### Why QuantStats Pro?
 
