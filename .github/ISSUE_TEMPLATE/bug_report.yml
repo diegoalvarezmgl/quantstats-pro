@@ -1,0 +1,41 @@
+name: Bug Report
+description: Report incorrect behaviour or a crash
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug. Please include enough detail to reproduce the issue.
+
+  - type: input
+    id: version
+    attributes:
+      label: QuantStats Pro version
+      placeholder: "e.g. 0.1.1"
+    validations:
+      required: true
+
+  - type: input
+    id: python
+    attributes:
+      label: Python version
+      placeholder: "e.g. 3.12"
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: What did you expect vs what actually happened?
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: Minimal code sample if possible
+      render: python
+    validations:
+      required: true

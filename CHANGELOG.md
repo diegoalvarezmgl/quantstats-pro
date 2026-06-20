@@ -14,6 +14,16 @@ QuantStats Pro is an enhanced, actively maintained drop-in replacement:
 - 125 tests passing
 - Apache 2.0 license with attribution to original author
 
+0.1.2
+-----
+
+**Repository**
+
+- Added CONTRIBUTING.md, SECURITY.md, issue and PR templates
+- Removed broken upstream CI workflows; fixed duplicate CI config
+- Updated PyPI publish workflow for Hatchling
+- README: crypto example with `periods_per_year=365`
+
 0.1.1
 -----
 
