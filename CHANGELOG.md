@@ -1,6 +1,21 @@
 Changelog
 ===========
 
+0.1.0
+-----
+
+**Initial QuantStats Pro release**
+
+Fork of [QuantStats](https://github.com/ranaroussi/quantstats) upstream v0.0.81.
+QuantStats Pro is an enhanced, actively maintained drop-in replacement:
+
+- Install: `pip install quantstats-pro` (replaces `pip install quantstats`)
+- Import unchanged: `import quantstats as qs`
+- 125 tests passing
+- Apache 2.0 license with attribution to original author
+
+See [docs/adr/](./docs/adr/) for architectural decisions.
+
 0.0.81
 ------
 

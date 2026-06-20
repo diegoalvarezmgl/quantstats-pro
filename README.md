@@ -1,16 +1,24 @@
-[![Python version](https://img.shields.io/badge/python-3.10+-blue.svg?style=flat)](https://pypi.python.org/pypi/quantstats)
-[![PyPi version](https://img.shields.io/pypi/v/quantstats.svg?maxAge=60)](https://pypi.python.org/pypi/quantstats)
-[![PyPi status](https://img.shields.io/pypi/status/quantstats.svg?maxAge=60)](https://pypi.python.org/pypi/quantstats)
-[![PyPi downloads](https://img.shields.io/pypi/dm/quantstats.svg?maxAge=2592000&label=installs&color=%2327B1FF)](https://pypi.python.org/pypi/quantstats)
-[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/ranaroussi/quantstats)
-[![Star this repo](https://img.shields.io/github/stars/ranaroussi/quantstats.svg?style=social&label=Star&maxAge=60)](https://github.com/ranaroussi/quantstats)
-[![Follow me on twitter](https://img.shields.io/twitter/follow/aroussi.svg?style=social&label=Follow&maxAge=60)](https://twitter.com/aroussi)
+[![Python version](https://img.shields.io/badge/python-3.10+-blue.svg?style=flat)](https://pypi.org/project/quantstats-pro/)
+[![CI](https://github.com/diegoalvarezmgl/quantstats-pro/actions/workflows/ci.yml/badge.svg)](https://github.com/diegoalvarezmgl/quantstats-pro/actions/workflows/ci.yml)
+[![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE.txt)
 
-# QuantStats: Portfolio analytics for quants
+# QuantStats Pro: Portfolio analytics for quants
 
-**QuantStats** Python library that performs portfolio profiling, allowing quants and portfolio managers to understand their performance better by providing them with in-depth analytics and risk metrics.
+**QuantStats Pro** is an enhanced, actively maintained **drop-in replacement** for [QuantStats](https://github.com/ranaroussi/quantstats) by Ran Aroussi. It performs portfolio profiling, allowing quants and portfolio managers to understand their performance with in-depth analytics and risk metrics.
 
-[Changelog »](./CHANGELOG.md)
+```bash
+pip install quantstats-pro   # replaces: pip install quantstats
+```
+
+```python
+import quantstats as qs       # import unchanged
+```
+
+[Changelog »](./CHANGELOG.md) · [Upstream »](https://github.com/ranaroussi/quantstats) · [Decisions »](./docs/adr/)
+
+### Why QuantStats Pro?
+
+This fork aims to fix known bugs, improve reliability, and evolve the reports and visualizations — while keeping the same `import quantstats as qs` API.
 
 ### QuantStats is comprised of 3 main modules:
 
@@ -237,13 +245,7 @@ conditional_value_at_risk(returns, sigma=1, confidence=0.99)
 Install using `pip`:
 
 ```bash
-$ pip install quantstats --upgrade --no-cache-dir
-```
-
-Install using `conda`:
-
-```bash
-$ conda install -c ranaroussi quantstats
+pip install quantstats-pro --upgrade
 ```
 
 ## Requirements
@@ -260,11 +262,9 @@ $ conda install -c ranaroussi quantstats
 
 ## Questions?
 
-This is a new library... If you find a bug, please
-[open an issue](https://github.com/ranaroussi/quantstats/issues).
+If you find a bug, please [open an issue](https://github.com/diegoalvarezmgl/quantstats-pro/issues).
 
-If you'd like to contribute, a great place to look is the
-[issues marked with help-wanted](https://github.com/ranaroussi/quantstats/issues?q=is%3Aopen+is%3Aissue+label%3A%22help+wanted%22).
+Contributions welcome — check [open issues](https://github.com/diegoalvarezmgl/quantstats-pro/issues) or upstream [QuantStats issues](https://github.com/ranaroussi/quantstats/issues) for bugs we're tracking.
 
 ## Known Issues
 
@@ -273,10 +273,10 @@ monthly returns heatmap when instructed to save - so even if you save the plot (
 
 ## Legal Stuff
 
-**QuantStats** is distributed under the **Apache Software License**. See the [LICENSE.txt](./LICENSE.txt) file in the release for details.
+**QuantStats Pro** is a fork of **QuantStats** by Ran Aroussi, distributed under the **Apache Software License**. See [LICENSE.txt](./LICENSE.txt) for details.
 
-## P.S.
+## Credits
 
-Please drop me a note with any feedback you have.
+**QuantStats Pro** — maintained by [Diego Alvarez](https://github.com/diegoalvarezmgl)
 
-**Ran Aroussi**
+**QuantStats** (original) — [Ran Aroussi](https://github.com/ranaroussi)

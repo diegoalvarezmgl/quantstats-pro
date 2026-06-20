@@ -3,13 +3,14 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "quantstats"
+name = "quantstats-pro"
 dynamic = ["version"]
-description = "Portfolio analytics for quants"
+description = "Enhanced drop-in replacement for QuantStats — portfolio analytics for quants"
 readme = "README.md"
 license = "Apache-2.0"
 requires-python = ">=3.10"
 authors = [
+    { name = "Diego Alvarez", email = "diegoalvarezmiguel@gmail.com" },
     { name = "Ran Aroussi", email = "ran@aroussi.com" },
 ]
 keywords = [
@@ -67,10 +68,11 @@ plotly = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/ranaroussi/quantstats"
-Documentation = "https://github.com/ranaroussi/quantstats"
-Repository = "https://github.com/ranaroussi/quantstats"
-Changelog = "https://github.com/ranaroussi/quantstats/blob/main/CHANGELOG.md"
+Homepage = "https://github.com/diegoalvarezmgl/quantstats-pro"
+Documentation = "https://github.com/diegoalvarezmgl/quantstats-pro"
+Repository = "https://github.com/diegoalvarezmgl/quantstats-pro"
+Changelog = "https://github.com/diegoalvarezmgl/quantstats-pro/blob/main/CHANGELOG.md"
+Upstream = "https://github.com/ranaroussi/quantstats"
 
 [tool.hatch.version]
 path = "quantstats/version.py"
