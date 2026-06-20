@@ -1,0 +1,26 @@
+name: Feature Request
+description: Suggest an improvement or new capability
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or use case
+      description: What problem does this solve? (e.g. crypto with 365 trading days)
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: api
+    attributes:
+      label: API compatibility
+      options:
+        - label: This can be added without breaking existing `import quantstats as qs` usage
+          required: false

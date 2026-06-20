@@ -14,11 +14,29 @@ pip install quantstats-pro   # replaces: pip install quantstats
 import quantstats as qs       # import unchanged
 ```
 
-[Changelog »](./CHANGELOG.md) · [Upstream »](https://github.com/ranaroussi/quantstats)
+[Changelog »](./CHANGELOG.md) · [Upstream »](https://github.com/ranaroussi/quantstats) · [Contributing »](./CONTRIBUTING.md)
 
 ### Why QuantStats Pro?
 
 This fork aims to fix known bugs, improve reliability, and evolve the reports and visualizations — while keeping the same `import quantstats as qs` API.
+
+### Crypto and 24/7 markets
+
+For daily crypto data, pass `periods_per_year=365` to reports and stats that annualize:
+
+```python
+import quantstats as qs
+
+qs.extend_pandas()
+returns = qs.utils.download_returns("BTC-USD")
+
+# Tearsheet with 365 trading days per year
+qs.reports.html(returns, periods_per_year=365, output="btc_report.html")
+
+# Individual metrics
+qs.stats.sharpe(returns, periods=365)
+qs.stats.rar(returns, periods=365)
+```
 
 ### QuantStats is comprised of 3 main modules:
 

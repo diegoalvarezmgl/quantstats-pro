@@ -27,7 +27,7 @@ keywords = [
 ]
 classifiers = [
     "License :: OSI Approved :: Apache Software License",
-    "Development Status :: 5 - Production/Stable",
+    "Development Status :: 4 - Beta",
     "Operating System :: OS Independent",
     "Intended Audience :: Developers",
     "Intended Audience :: Financial and Insurance Industry",
