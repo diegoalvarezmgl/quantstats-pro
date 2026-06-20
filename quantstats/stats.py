@@ -1558,7 +1558,7 @@ def cagr(
     return res
 
 
-def rar(returns, rf=0.0):
+def rar(returns, rf=0.0, periods=252):
     """
     Calculate the Risk-Adjusted Return (RAR).
 
@@ -1569,6 +1569,7 @@ def rar(returns, rf=0.0):
     Args:
         returns (pd.Series): Return series to analyze
         rf (float): Risk-free rate (annualized, default: 0.0)
+        periods (int): Periods per year for CAGR annualization (default: 252)
 
     Returns:
         float: Risk-adjusted return
@@ -1582,7 +1583,7 @@ def rar(returns, rf=0.0):
     returns = _utils._prepare_returns(returns, rf)
 
     # Calculate CAGR and divide by exposure time
-    return cagr(returns) / exposure(returns)
+    return cagr(returns, periods=periods) / exposure(returns)
 
 
 def skew(returns, prepare_returns=True):
@@ -3253,7 +3254,7 @@ def montecarlo_drawdown(returns, sims=1000, seed=None):
     return mc.maxdd
 
 
-def montecarlo_cagr(returns, sims=1000, seed=None):
+def montecarlo_cagr(returns, sims=1000, periods=252, seed=None):
     """
     Distribution of CAGR across Monte Carlo simulations.
 
@@ -3263,6 +3264,7 @@ def montecarlo_cagr(returns, sims=1000, seed=None):
     Args:
         returns (pd.Series): Daily returns
         sims (int): Number of simulations (default: 1000)
+        periods (int): Periods per year for annualization (default: 252)
         seed (int, optional): Random seed for reproducibility
 
     Returns:
@@ -3285,7 +3287,7 @@ def montecarlo_cagr(returns, sims=1000, seed=None):
 
     # Calculate CAGR for each simulation path
     n_periods = len(mc.data)
-    years = n_periods / 252  # Assume daily data
+    years = n_periods / periods
 
     cagr_values = []
     for col in mc.data.columns:

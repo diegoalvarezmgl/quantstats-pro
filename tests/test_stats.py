@@ -175,6 +175,19 @@ class TestRatios:
         result = stats.cagr(sample_returns)
         assert np.isfinite(result)
 
+    def test_rar_uses_periods(self):
+        """RAR must annualize CAGR with the same periods parameter."""
+        np.random.seed(0)
+        dates = pd.date_range("2023-01-01", periods=365, freq="D")
+        returns = pd.Series(np.random.normal(0.001, 0.02, 365), index=dates)
+
+        rar_365 = stats.rar(returns, periods=365)
+        expected = stats.cagr(returns, periods=365) / stats.exposure(returns)
+        assert np.isclose(rar_365, expected)
+
+        rar_252 = stats.rar(returns, periods=252)
+        assert not np.isclose(rar_252, rar_365)
+
 
 class TestBenchmarkComparison:
     """Test benchmark comparison functions."""

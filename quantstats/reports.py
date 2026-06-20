@@ -1441,7 +1441,7 @@ def metrics(
 
         # Additional ratios
         metrics["Ulcer Performance Index"] = _get_stats().ulcer_performance_index(df, rf)
-        metrics["Risk-Adjusted Return %"] = _get_stats().rar(df, rf) * pct
+        metrics["Risk-Adjusted Return %"] = _get_stats().rar(df, rf, periods=win_year) * pct
         metrics["Risk-Return Ratio"] = _get_stats().risk_return_ratio(df, prepare_returns=False)
 
         # Add separator

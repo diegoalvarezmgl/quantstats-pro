@@ -157,6 +157,15 @@ class TestStatsMonteCarlo:
         assert mc.bust_probability is not None
         assert mc.goal_probability is not None
 
+    def test_montecarlo_cagr_uses_periods(self, sample_returns):
+        """Monte Carlo CAGR must respect periods_per_year for annualization."""
+        dist_252 = stats.montecarlo_cagr(sample_returns, sims=100, periods=252, seed=42)
+        dist_365 = stats.montecarlo_cagr(sample_returns, sims=100, periods=365, seed=42)
+
+        assert np.isfinite(dist_252["mean"])
+        assert np.isfinite(dist_365["mean"])
+        assert not np.isclose(dist_252["mean"], dist_365["mean"])
+
 
 class TestMonteCarloEdgeCases:
     """Test edge cases for Monte Carlo simulations."""

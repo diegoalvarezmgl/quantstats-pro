@@ -20,6 +20,15 @@ See [docs/adr/](./docs/adr/) for architectural decisions.
 
 Starting point forked from upstream v0.0.81. Upstream issues triaged — see [ADR-0006](./docs/adr/0006-baseline-v0-1-0.md). New bugs are discovered via reproduction, not upstream issue lists.
 
+0.1.1
+-----
+
+**Bugfixes**
+
+- Fixed `rar()` ignoring `periods_per_year` — always used 252 for CAGR annualization
+- Fixed `montecarlo_cagr()` hardcoding 252 periods per year
+- Reports now pass `periods_per_year` to `rar()` in metrics table
+
 0.0.81
 ------
 
