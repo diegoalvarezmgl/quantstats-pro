@@ -1,18 +1,18 @@
 Changelog
 ===========
 
-0.1.0
+0.1.3
 -----
 
-**Initial QuantStats Pro release**
+**Repository**
 
-Fork of [QuantStats](https://github.com/ranaroussi/quantstats) upstream v0.0.81.
-QuantStats Pro is an enhanced, actively maintained drop-in replacement:
-
-- Install: `pip install quantstats-pro` (replaces `pip install quantstats`)
-- Import unchanged: `import quantstats as qs`
-- 125 tests passing
-- Apache 2.0 license with attribution to original author
+- Removed legacy upstream config (`.travis.yml`, `.deepsource.toml`, `setup.cfg`, `.flake8`, `.claude/`)
+- README: local docs assets instead of upstream image URLs; fixed report mode quote typo
+- CI: added ruff and pyright jobs (informational until pre-existing lint debt is cleared)
+- Dependabot: weekly schedule
+- Aligned `requirements.txt` with `pyproject.toml` (`pandas>=1.5.0`)
+- Package metadata: Diego Alvarez as fork maintainer
+- Removed external image URLs from docs
 
 0.1.2
 -----
@@ -32,6 +32,19 @@ QuantStats Pro is an enhanced, actively maintained drop-in replacement:
 - Fixed `rar()` ignoring `periods_per_year` — always used 252 for CAGR annualization
 - Fixed `montecarlo_cagr()` hardcoding 252 periods per year
 - Reports now pass `periods_per_year` to `rar()` in metrics table
+
+0.1.0
+-----
+
+**Initial QuantStats Pro release**
+
+Fork of [QuantStats](https://github.com/ranaroussi/quantstats) upstream v0.0.81.
+QuantStats Pro is an enhanced, actively maintained drop-in replacement:
+
+- Install: `pip install quantstats-pro` (replaces `pip install quantstats`)
+- Import unchanged: `import quantstats as qs`
+- 125 tests passing
+- Apache 2.0 license with attribution to original author
 
 0.0.81
 ------
