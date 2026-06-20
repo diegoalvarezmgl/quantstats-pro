@@ -16,6 +16,10 @@ QuantStats Pro is an enhanced, actively maintained drop-in replacement:
 
 See [docs/adr/](./docs/adr/) for architectural decisions.
 
+### Baseline v0.1.0
+
+Starting point forked from upstream v0.0.81. Upstream issues triaged — see [ADR-0006](./docs/adr/0006-baseline-v0-1-0.md). New bugs are discovered via reproduction, not upstream issue lists.
+
 0.0.81
 ------
 

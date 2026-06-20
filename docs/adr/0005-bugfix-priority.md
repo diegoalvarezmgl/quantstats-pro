@@ -1,9 +1,5 @@
 # Bugfix priority for v0.1.x
 
-First bugfixes after the identity push, in order. Each gets its own branch, regression test, and commit.
+**Status:** Superseded by [ADR-0006](./0006-baseline-v0-1-0.md) (2026-06-20).
 
-1. **#514** — `information_ratio()` uses arithmetic mean instead of geometric
-2. **#516** — Inconsistencies in 3Y/5Y/10Y annualized return calculations
-3. **#518** — EOY returns vs benchmark on time ranges longer than 10y
-
-Deferred: #521 (variable risk-free rate), #510 (compounded flag on rar), #520 (heatmap VS Code).
+Upstream issues #514, #516, #518 were triaged and removed from the active queue. See ADR-0006 for details.
