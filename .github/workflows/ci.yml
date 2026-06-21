@@ -50,7 +50,6 @@ jobs:
 
   typecheck:
     runs-on: ubuntu-latest
-    continue-on-error: true  # pre-existing upstream typing debt
     steps:
       - uses: actions/checkout@v7
 
@@ -62,7 +61,7 @@ jobs:
       - name: Install dev dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -e ".[dev]"
+          pip install -e ".[dev,plotly]"
 
       - name: Pyright
         run: pyright quantstats/
