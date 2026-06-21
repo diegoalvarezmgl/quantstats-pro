@@ -29,13 +29,14 @@ The module is designed to work with pandas Series and DataFrames containing
 return data, price data, or performance metrics.
 """
 
+from math import ceil as _ceil
+from math import sqrt as _sqrt
 from warnings import warn
-from typing import Literal
-import pandas as _pd
+
 import numpy as _np
-from numpy.typing import NDArray
-from math import ceil as _ceil, sqrt as _sqrt
-from scipy.stats import norm as _norm, linregress as _linregress
+import pandas as _pd
+from scipy.stats import linregress as _linregress
+from scipy.stats import norm as _norm
 
 from . import utils as _utils
 from ._compat import safe_concat
@@ -168,7 +169,7 @@ def distribution(
     if isinstance(returns, _pd.DataFrame):
         warn(
             "Pandas DataFrame was passed (Series expected). "
-            "Only first column will be used."
+            "Only first column will be used.", stacklevel=2
         )
         returns = returns.copy()
         returns.columns = map(str.lower, returns.columns)
@@ -543,13 +544,13 @@ def win_rate(
             # Filter out zero returns (periods with no trading)
             non_zero_returns = series[series != 0]
             if len(non_zero_returns) == 0:
-                warn("No non-zero returns found for win rate calculation, returning 0.0")
+                warn("No non-zero returns found for win rate calculation, returning 0.0", stacklevel=2)
                 return 0.0
 
             # Calculate ratio of positive returns to non-zero returns
             return len(series[series > 0]) / len(non_zero_returns)
         except (ValueError, TypeError) as e:
-            warn(f"Error calculating win rate: {e}, returning 0.0")
+            warn(f"Error calculating win rate: {e}, returning 0.0", stacklevel=2)
             return 0.0
 
     if prepare_returns:
@@ -1384,7 +1385,7 @@ def treynor_ratio(returns, benchmark, periods=252.0, rf=0.0):
 
     # Prevent division by zero
     if beta == 0:
-        warn("Beta is zero, cannot calculate Treynor ratio, returning 0")
+        warn("Beta is zero, cannot calculate Treynor ratio, returning 0", stacklevel=2)
         return 0
 
     # Calculate excess return over risk-free rate divided by beta
@@ -1425,12 +1426,12 @@ def omega(
 
     # Validate minimum data requirements
     if len(returns) < 2:
-        warn("Insufficient data for omega ratio calculation (need at least 2 returns), returning NaN")
+        warn("Insufficient data for omega ratio calculation (need at least 2 returns), returning NaN", stacklevel=2)
         return _np.nan
 
     # Validate required return parameter
     if required_return <= -1:
-        warn(f"Invalid required_return ({required_return}) for omega ratio, must be > -1, returning NaN")
+        warn(f"Invalid required_return ({required_return}) for omega ratio, must be > -1, returning NaN", stacklevel=2)
         return _np.nan
 
     # Prepare returns (subtract risk-free rate if applicable)
@@ -1726,7 +1727,7 @@ def ulcer_performance_index(returns, rf=0):
     """
     # Calculate excess return divided by Ulcer Index
     ulcer = ulcer_index(returns)
-    
+
     # Handle both Series (DataFrame input) and scalar (Series input) cases
     if isinstance(ulcer, _pd.Series):
         # DataFrame input - element-wise division with zero protection
@@ -1784,7 +1785,7 @@ def serenity_index(returns, rf=0):
 
     # Calculate pitfall measure using conditional value at risk of drawdowns
     std_returns = returns.std()
-    
+
     # Handle both Series (DataFrame input) and scalar (Series input) cases
     if isinstance(std_returns, _pd.Series):
         # DataFrame input - element-wise operations
@@ -2033,7 +2034,7 @@ def tail_ratio(returns, cutoff=0.95, prepare_returns=True):
     # Calculate ratio of right tail to left tail
     upper_quantile = returns.quantile(cutoff)
     lower_quantile = returns.quantile(1 - cutoff)
-    
+
     # Handle edge cases: NaN values or zero denominator
     # Check if result is a Series (DataFrame input) or scalar (Series input)
     if isinstance(upper_quantile, _pd.Series):
@@ -2078,7 +2079,7 @@ def payoff_ratio(returns, prepare_returns=True):
     # Calculate ratio of average win to absolute average loss
     avg_loss_val = avg_loss(returns)
     avg_win_val = avg_win(returns)
-    
+
     # Handle both Series (DataFrame input) and scalar (Series input) cases
     if isinstance(avg_loss_val, _pd.Series):
         # DataFrame input - element-wise division with zero protection
@@ -2395,7 +2396,7 @@ def risk_return_ratio(returns, prepare_returns=True):
 
     # Calculate mean return divided by standard deviation
     std = returns.std()
-    
+
     # Handle both Series (DataFrame input) and scalar (Series input) cases
     if isinstance(std, _pd.Series):
         # DataFrame input - element-wise division with zero protection
@@ -2821,19 +2822,30 @@ def compare(
     # This must happen before prepare_returns to avoid issues
     if hasattr(returns.index, 'tz') and returns.index.tz is not None:
         returns = returns.tz_convert('UTC').tz_localize(None)
-    
+
     if prepare_returns:
         returns = _utils._prepare_returns(returns)
 
     # Normalize benchmark timezone first if it's not a string
-    if benchmark is not None and not isinstance(benchmark, str):
-        if hasattr(benchmark.index if isinstance(benchmark, _pd.Series) else benchmark[benchmark.columns[0]].index, 'tz'):
-            if isinstance(benchmark, _pd.Series) and benchmark.index.tz is not None:
-                benchmark = benchmark.tz_convert('UTC').tz_localize(None)
-            elif isinstance(benchmark, _pd.DataFrame) and benchmark[benchmark.columns[0]].index.tz is not None:
-                for col in benchmark.columns:
-                    benchmark[col] = benchmark[col].tz_convert('UTC').tz_localize(None)
-    
+    if (
+        benchmark is not None
+        and not isinstance(benchmark, str)
+        and hasattr(
+            benchmark.index
+            if isinstance(benchmark, _pd.Series)
+            else benchmark[benchmark.columns[0]].index,
+            "tz",
+        )
+    ):
+        if isinstance(benchmark, _pd.Series) and benchmark.index.tz is not None:
+            benchmark = benchmark.tz_convert("UTC").tz_localize(None)
+        elif (
+            isinstance(benchmark, _pd.DataFrame)
+            and benchmark[benchmark.columns[0]].index.tz is not None
+        ):
+            for col in benchmark.columns:
+                benchmark[col] = benchmark[col].tz_convert("UTC").tz_localize(None)
+
     # Store original benchmark for proper aggregation
     # This preserves returns that may fall on non-trading days
     if isinstance(benchmark, str):
@@ -2842,11 +2854,11 @@ def compare(
         benchmark_original = benchmark[benchmark.columns[0]].copy()
     else:
         benchmark_original = benchmark.copy() if benchmark is not None else None
-    
+
     # Normalize timezone for benchmark_original as well (in case it was downloaded)
     if benchmark_original is not None and hasattr(benchmark_original.index, 'tz') and benchmark_original.index.tz is not None:
         benchmark_original = benchmark_original.tz_convert('UTC').tz_localize(None)
-    
+
     # Prepare benchmark to match returns index for other calculations
     benchmark = _utils._prepare_benchmark(benchmark, returns.index)
 
@@ -2930,7 +2942,7 @@ def monthly_returns(returns, eoy=True, compounded=True, prepare_returns=True):
     if isinstance(returns, _pd.DataFrame):
         warn(
             "Pandas DataFrame was passed (Series expected). "
-            "Only first column will be used."
+            "Only first column will be used.", stacklevel=2
         )
         returns = returns.copy()
         returns.columns = map(str.lower, returns.columns)

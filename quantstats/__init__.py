@@ -1,9 +1,11 @@
 #!/usr/bin/env python
 #
-# QuantStats: Portfolio analytics for quants
-# https://github.com/ranaroussi/quantstats
+# QuantStats Pro: Portfolio analytics for quants
+# https://github.com/diegoalvarezmgl/quantstats-pro
+# Original: https://github.com/ranaroussi/quantstats
 #
 # Copyright 2019-2025 Ran Aroussi
+# Copyright 2025 Diego Alvarez
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -21,8 +23,9 @@ from . import version
 
 __version__ = version.version
 __author__ = "Ran Aroussi"
+__maintainer__ = "Diego Alvarez"
 
-from . import stats, utils, plots, reports
+from . import plots, reports, stats, utils
 
 __all__ = ["stats", "plots", "reports", "utils", "extend_pandas"]
 

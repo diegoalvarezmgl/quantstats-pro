@@ -46,9 +46,7 @@ qs.stats.rar(returns, periods=365)
 
 ---
 
-### **NEW! Monte Carlo Simulations**
-
-<img src="https://raw.githubusercontent.com/ranaroussi/pandas-montecarlo/master/demo.png" alt="Monte Carlo Simulation" width="640">
+### Monte Carlo Simulations
 
 Run probabilistic risk analysis with built-in Monte Carlo simulations:
 
@@ -99,14 +97,14 @@ qs.plots.snapshot(stock, title='Facebook Performance', show=True)
 
 Output:
 
-![Snapshot plot](https://github.com/ranaroussi/quantstats/blob/main/docs/snapshot.webp?raw=true)
+![Snapshot plot](./docs/snapshot.webp)
 
 ### Creating a report
 
 You can create 7 different report tearsheets:
 
-1. `qs.reports.metrics(mode='basic|full", ...)` - shows basic/full metrics
-2. `qs.reports.plots(mode='basic|full", ...)` - shows basic/full plots
+1. `qs.reports.metrics(mode='basic|full', ...)` - shows basic/full metrics
+2. `qs.reports.plots(mode='basic|full', ...)` - shows basic/full plots
 3. `qs.reports.basic(...)` - shows basic metrics and plots
 4. `qs.reports.full(...)` - shows full metrics and plots
 5. `qs.reports.html(...)` - generates a complete report as html
@@ -120,9 +118,9 @@ qs.reports.html(stock, "SPY")
 
 Output will generate something like this:
 
-![HTML tearsheet](https://github.com/ranaroussi/quantstats/blob/main/docs/report.webp?raw=true)
+![HTML tearsheet](./docs/report.webp)
 
-[View original html file](https://rawcdn.githack.com/ranaroussi/quantstats/main/docs/tearsheet.html)
+[View sample HTML tearsheet](./docs/tearsheet.html)
 
 ### Available methods
 
@@ -222,7 +220,7 @@ To view a complete list of available methods, run:
  'yearly_returns']
 ```
 
-**\*\*\* Full documentation coming soon \*\*\***
+See [Monte Carlo documentation](./docs/montecarlo.md) and `help(qs.stats.<method>)` for parameter details.
 
 ### Important: Period-Based vs Trade-Based Metrics
 

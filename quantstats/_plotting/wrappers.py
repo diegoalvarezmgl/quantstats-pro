@@ -23,15 +23,17 @@ import warnings
 from typing import TYPE_CHECKING, Any
 
 import matplotlib.pyplot as _plt
-from matplotlib.ticker import (
-    StrMethodFormatter as _StrMethodFormatter,
-    FuncFormatter as _FuncFormatter,
-)
-
 import numpy as _np
 import pandas as _pd
-from .._compat import safe_resample
 import seaborn as _sns
+from matplotlib.ticker import (
+    FuncFormatter as _FuncFormatter,
+)
+from matplotlib.ticker import (
+    StrMethodFormatter as _StrMethodFormatter,
+)
+
+from .._compat import safe_resample
 
 # Lazy imports to avoid circular dependency during package initialization
 # These modules are imported when first accessed via _get_stats() and _get_utils()
@@ -53,6 +55,8 @@ def _get_utils():
         from .. import utils
         _utils = utils
     return _utils
+
+import contextlib
 
 from . import core as _core
 
@@ -230,8 +234,7 @@ def snapshot(
     if subtitle:
         if isinstance(returns, _pd.Series):
             axes[0].set_title(
-                "%s - %s ;  Sharpe: %.2f                      \n"
-                % (
+                "{} - {} ;  Sharpe: {:.2f}                      \n".format(
                     returns.index.date[:1][0].strftime("%e %b '%y"),  # type: ignore
                     returns.index.date[-1:][0].strftime("%e %b '%y"),  # type: ignore
                     _get_stats().sharpe(returns),
@@ -241,8 +244,7 @@ def snapshot(
             )
         elif isinstance(returns, _pd.DataFrame):
             axes[0].set_title(
-                "\n%s - %s ;  "
-                % (
+                "\n{} - {} ;  ".format(
                     returns.index.date[:1][0].strftime("%e %b '%y"),  # type: ignore
                     returns.index.date[-1:][0].strftime("%e %b '%y"),  # type: ignore
                 ),
@@ -370,14 +372,10 @@ def snapshot(
     fig.autofmt_xdate()
 
     # Apply layout adjustments with error handling
-    try:
+    with contextlib.suppress(ValueError, AttributeError, TypeError, RuntimeError):
         _plt.subplots_adjust(hspace=0)
-    except (ValueError, AttributeError, TypeError, RuntimeError):
-        pass
-    try:
+    with contextlib.suppress(ValueError, AttributeError, TypeError, RuntimeError):
         fig.tight_layout(w_pad=0, h_pad=0)
-    except (ValueError, AttributeError, TypeError, RuntimeError):
-        pass
 
     # Save figure if requested
     if savefig:
@@ -483,17 +481,14 @@ def earnings(
     # Add subtitle with date range and P&L information
     if subtitle:
         ax.set_title(
-            "\n%s - %s ;  P&L: %s (%s)                "
-            % (
+            "\n{} - {} ;  P&L: {} ({})                ".format(
                 returns.index.date[1:2][0].strftime("%e %b '%y"),  # type: ignore
                 returns.index.date[-1:][0].strftime("%e %b '%y"),  # type: ignore
                 _get_utils()._score_str(
-                    "${:,}".format(round(returns.values[-1] - returns.values[0], 2))
+                    f"${round(returns.values[-1] - returns.values[0], 2):,}"
                 ),
                 _get_utils()._score_str(
-                    "{:,}%".format(
-                        round((returns.values[-1] / returns.values[0] - 1) * 100, 2)
-                    )
+                    f"{round((returns.values[-1] / returns.values[0] - 1) * 100, 2):,}%"
                 ),
             ),
             fontsize=10,
@@ -522,7 +517,7 @@ def earnings(
 
     # Set y-axis label showing starting balance
     ax.set_ylabel(
-        "Value of  ${:,.0f}".format(start_balance),
+        f"Value of  ${start_balance:,.0f}",
         fontname=fontname,
         fontweight="bold",
         fontsize=11,
@@ -540,14 +535,10 @@ def earnings(
     fig.autofmt_xdate()
 
     # Apply layout adjustments with error handling
-    try:
+    with contextlib.suppress(ValueError, AttributeError, TypeError, RuntimeError):
         _plt.subplots_adjust(hspace=0)
-    except (ValueError, AttributeError, TypeError, RuntimeError):
-        pass
-    try:
+    with contextlib.suppress(ValueError, AttributeError, TypeError, RuntimeError):
         fig.tight_layout(w_pad=0, h_pad=0)
-    except (ValueError, AttributeError, TypeError, RuntimeError):
-        pass
 
     # Save figure if requested
     if savefig:
@@ -632,7 +623,7 @@ def returns(
     title = "Cumulative Returns" if compound else "Returns"
     if benchmark is not None:
         if isinstance(benchmark, str):
-            title += " vs %s" % benchmark.upper()
+            title += f" vs {benchmark.upper()}"
         else:
             title += " vs Benchmark"
         if match_volatility:
@@ -731,7 +722,7 @@ def log_returns(
     title = "Cumulative Returns" if compound else "Returns"
     if benchmark is not None:
         if isinstance(benchmark, str):
-            title += " vs %s (Log Scaled" % benchmark.upper()
+            title += f" vs {benchmark.upper()} (Log Scaled"
         else:
             title += " vs Benchmark (Log Scaled"
         if match_volatility:
@@ -1121,7 +1112,7 @@ def histogram(
         resample=resample,
         grayscale=grayscale,
         fontname=fontname,
-        title="Distribution of %sReturns" % title,
+        title=f"Distribution of {title}Returns",
         figsize=figsize,
         ylabel=ylabel,
         subtitle=subtitle,
@@ -1468,7 +1459,7 @@ def rolling_volatility(
         hline=returns.mean(),  # Show mean volatility as horizontal line
         hlw=1.5,
         ylabel=ylabel,
-        title="Rolling Volatility (%s)" % period_label,
+        title=f"Rolling Volatility ({period_label})",
         fontname=fontname,
         grayscale=grayscale,
         lw=lw,
@@ -1564,7 +1555,7 @@ def rolling_sharpe(
         hline=returns.mean(),  # Show mean Sharpe as horizontal line
         hlw=1.5,
         ylabel=ylabel,
-        title="Rolling Sharpe (%s)" % period_label,
+        title=f"Rolling Sharpe ({period_label})",
         fontname=fontname,
         grayscale=grayscale,
         lw=lw,
@@ -1655,7 +1646,7 @@ def rolling_sortino(
         hline=returns.mean(),  # Show mean Sortino as horizontal line
         hlw=1.5,
         ylabel=ylabel,
-        title="Rolling Sortino (%s)" % period_label,
+        title=f"Rolling Sortino ({period_label})",
         fontname=fontname,
         grayscale=grayscale,
         lw=lw,
@@ -1840,14 +1831,10 @@ def monthly_heatmap(
     _plt.yticks(rotation=0, fontsize=annot_size * 1.2)
 
     # Apply layout adjustments with error handling
-    try:
+    with contextlib.suppress(ValueError, AttributeError, TypeError, RuntimeError):
         _plt.subplots_adjust(hspace=0, bottom=0, top=1)
-    except (ValueError, AttributeError, TypeError, RuntimeError):
-        pass
-    try:
+    with contextlib.suppress(ValueError, AttributeError, TypeError, RuntimeError):
         fig.tight_layout(w_pad=0, h_pad=0)
-    except (ValueError, AttributeError, TypeError, RuntimeError):
-        pass
 
     # Save figure if requested
     if savefig:

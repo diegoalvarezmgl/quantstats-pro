@@ -19,25 +19,26 @@
 
 from __future__ import annotations
 
+import contextlib
 from typing import TYPE_CHECKING
 
 import matplotlib.pyplot as _plt
 
 # Set default font to Arial, fall back gracefully if not available
-try:
+with contextlib.suppress(KeyError, ValueError, OSError):
     _plt.rcParams["font.family"] = "Arial"
-except (KeyError, ValueError, OSError):
-    pass
 
 import matplotlib.dates as _mdates
+import numpy as _np
+import pandas as _pd
+import seaborn as _sns
 from matplotlib.ticker import (
     FormatStrFormatter as _FormatStrFormatter,
+)
+from matplotlib.ticker import (
     FuncFormatter as _FuncFormatter,
 )
 
-import pandas as _pd
-import numpy as _np
-import seaborn as _sns
 # Lazy import to avoid circular dependency during package initialization
 _stats = None
 
@@ -50,10 +51,12 @@ def _get_stats():
     return _stats
 
 
+import contextlib
+
 from .._compat import safe_resample
 
 if TYPE_CHECKING:
-    from matplotlib.figure import Figure as _Figure
+    pass
 
 # Type alias for return data
 Returns = _pd.Series | _pd.DataFrame
@@ -240,8 +243,7 @@ def plot_returns_bars(
     # Add subtitle with date range if enabled
     if subtitle:
         ax.set_title(
-            "%s - %s           \n"
-            % (
+            "{} - {}           \n".format(
                 df.index.date[:1][0].strftime("%Y"),
                 df.index.date[-1:][0].strftime("%Y"),
             ),
@@ -281,11 +283,10 @@ def plot_returns_bars(
     fig.autofmt_xdate()
 
     # Add horizontal line if specified
-    if hline is not None:
-        if not isinstance(hline, _pd.Series):
-            if grayscale:
-                hlcolor = "gray"
-            ax.axhline(hline, ls="--", lw=hlw, color=hlcolor, label=hllabel, zorder=2)
+    if hline is not None and not isinstance(hline, _pd.Series):
+        if grayscale:
+            hlcolor = "gray"
+        ax.axhline(hline, ls="--", lw=hlw, color=hlcolor, label=hllabel, zorder=2)
 
     # Add zero line for reference
     ax.axhline(0, ls="--", lw=1, color="#000000", zorder=2)
@@ -319,15 +320,11 @@ def plot_returns_bars(
             pass
 
     # Adjust layout
-    try:
+    with contextlib.suppress(ValueError, AttributeError, TypeError, RuntimeError):
         _plt.subplots_adjust(hspace=0, bottom=0, top=1)
-    except (ValueError, AttributeError, TypeError, RuntimeError):
-        pass
 
-    try:
+    with contextlib.suppress(ValueError, AttributeError, TypeError, RuntimeError):
         fig.tight_layout()
-    except (ValueError, AttributeError, TypeError, RuntimeError):
-        pass
 
     # Handle saving and displaying
     if savefig:
@@ -482,8 +479,7 @@ def plot_timeseries(
     # Add subtitle with date range if enabled
     if subtitle:
         ax.set_title(
-            "%s - %s            \n"
-            % (
+            "{} - {}            \n".format(
                 returns.index.date[:1][0].strftime("%e %b '%y"),
                 returns.index.date[-1:][0].strftime("%e %b '%y"),
             ),
@@ -527,11 +523,10 @@ def plot_timeseries(
     # ax.fmt_xdata = _mdates.DateFormatter('%Y-%m-%d')
 
     # Add horizontal line if specified
-    if hline is not None:
-        if not isinstance(hline, _pd.Series):
-            if grayscale:
-                hlcolor = "black"
-            ax.axhline(hline, ls="--", lw=hlw, color=hlcolor, label=hllabel, zorder=2)
+    if hline is not None and not isinstance(hline, _pd.Series):
+        if grayscale:
+            hlcolor = "black"
+        ax.axhline(hline, ls="--", lw=hlw, color=hlcolor, label=hllabel, zorder=2)
 
     # Add reference lines at zero
     ax.axhline(0, ls="-", lw=1, color="gray", zorder=1)
@@ -569,15 +564,11 @@ def plot_timeseries(
             pass
 
     # Adjust layout
-    try:
+    with contextlib.suppress(ValueError, AttributeError, TypeError, RuntimeError):
         _plt.subplots_adjust(hspace=0, bottom=0, top=1)
-    except (ValueError, AttributeError, TypeError, RuntimeError):
-        pass
 
-    try:
+    with contextlib.suppress(ValueError, AttributeError, TypeError, RuntimeError):
         fig.tight_layout()
-    except (ValueError, AttributeError, TypeError, RuntimeError):
-        pass
 
     # Handle saving and displaying
     if savefig:
@@ -691,8 +682,7 @@ def plot_histogram(
     # Add subtitle with date range if enabled
     if subtitle:
         ax.set_title(
-            "%s - %s           \n"
-            % (
+            "{} - {}           \n".format(
                 returns.index.date[:1][0].strftime("%Y"),
                 returns.index.date[-1:][0].strftime("%Y"),
             ),
@@ -799,7 +789,7 @@ def plot_histogram(
 
     # Format x-axis as percentage
     ax.xaxis.set_major_formatter(
-        _plt.FuncFormatter(lambda x, loc: "{:,}%".format(int(x * 100)))
+        _plt.FuncFormatter(lambda x, loc: f"{int(x * 100):,}%")
     )
 
     # Removed static lines for clarity
@@ -824,15 +814,11 @@ def plot_histogram(
     # fig.autofmt_xdate()
 
     # Adjust layout
-    try:
+    with contextlib.suppress(ValueError, AttributeError, TypeError, RuntimeError):
         _plt.subplots_adjust(hspace=0, bottom=0, top=1)
-    except (ValueError, AttributeError, TypeError, RuntimeError):
-        pass
 
-    try:
+    with contextlib.suppress(ValueError, AttributeError, TypeError, RuntimeError):
         fig.tight_layout()
-    except (ValueError, AttributeError, TypeError, RuntimeError):
-        pass
 
     # Handle saving and displaying
     if savefig:
@@ -978,8 +964,7 @@ def plot_rolling_stats(
     # Add subtitle with date range if enabled
     if subtitle:
         ax.set_title(
-            "%s - %s           \n"
-            % (
+            "{} - {}           \n".format(
                 df.index.date[:1][0].strftime("%e %b '%y"),
                 df.index.date[-1:][0].strftime("%e %b '%y"),
             ),
@@ -988,11 +973,10 @@ def plot_rolling_stats(
         )
 
     # Add horizontal line if specified
-    if hline is not None:
-        if not isinstance(hline, _pd.Series):
-            if grayscale:
-                hlcolor = "black"
-            ax.axhline(hline, ls="--", lw=hlw, color=hlcolor, label=hllabel, zorder=2)
+    if hline is not None and not isinstance(hline, _pd.Series):
+        if grayscale:
+            hlcolor = "black"
+        ax.axhline(hline, ls="--", lw=hlw, color=hlcolor, label=hllabel, zorder=2)
 
     # Add zero reference line
     ax.axhline(0, ls="--", lw=1, color="#000000", zorder=2)
@@ -1022,15 +1006,11 @@ def plot_rolling_stats(
             pass
 
     # Adjust layout
-    try:
+    with contextlib.suppress(ValueError, AttributeError, TypeError, RuntimeError):
         _plt.subplots_adjust(hspace=0, bottom=0, top=1)
-    except (ValueError, AttributeError, TypeError, RuntimeError):
-        pass
 
-    try:
+    with contextlib.suppress(ValueError, AttributeError, TypeError, RuntimeError):
         fig.tight_layout()
-    except (ValueError, AttributeError, TypeError, RuntimeError):
-        pass
 
     # Handle saving and displaying
     if savefig:
@@ -1128,8 +1108,7 @@ def plot_rolling_beta(
     # Add subtitle with date range if enabled
     if subtitle:
         ax.set_title(
-            "%s - %s           \n"
-            % (
+            "{} - {}           \n".format(
                 returns.index.date[:1][0].strftime("%e %b '%y"),
                 returns.index.date[-1:][0].strftime("%e %b '%y"),
             ),
@@ -1233,15 +1212,11 @@ def plot_rolling_beta(
             pass
 
     # Adjust layout
-    try:
+    with contextlib.suppress(ValueError, AttributeError, TypeError, RuntimeError):
         _plt.subplots_adjust(hspace=0, bottom=0, top=1)
-    except (ValueError, AttributeError, TypeError, RuntimeError):
-        pass
 
-    try:
+    with contextlib.suppress(ValueError, AttributeError, TypeError, RuntimeError):
         fig.tight_layout()
-    except (ValueError, AttributeError, TypeError, RuntimeError):
-        pass
 
     # Handle saving and displaying
     if savefig:
@@ -1345,8 +1320,7 @@ def plot_longest_drawdowns(
     # Add subtitle with date range if enabled
     if subtitle:
         ax.set_title(
-            "%s - %s           \n"
-            % (
+            "{} - {}           \n".format(
                 returns.index.date[:1][0].strftime("%e %b '%y"),
                 returns.index.date[-1:][0].strftime("%e %b '%y"),
             ),
@@ -1365,7 +1339,7 @@ def plot_longest_drawdowns(
     # Highlight drawdown periods
     highlight = "black" if grayscale else "red"
     # Vectorized approach instead of iterrows
-    for start, end in zip(longest_dd["start"], longest_dd["end"]):
+    for start, end in zip(longest_dd["start"], longest_dd["end"], strict=False):
         ax.axvspan(
             *_mdates.datestr2num([str(start), str(end)]),
             color=highlight,
@@ -1404,15 +1378,11 @@ def plot_longest_drawdowns(
     fig.autofmt_xdate()
 
     # Adjust layout
-    try:
+    with contextlib.suppress(ValueError, AttributeError, TypeError, RuntimeError):
         _plt.subplots_adjust(hspace=0, bottom=0, top=1)
-    except (ValueError, AttributeError, TypeError, RuntimeError):
-        pass
 
-    try:
+    with contextlib.suppress(ValueError, AttributeError, TypeError, RuntimeError):
         fig.tight_layout()
-    except (ValueError, AttributeError, TypeError, RuntimeError):
-        pass
 
     # Handle saving and displaying
     if savefig:
@@ -1522,8 +1492,7 @@ def plot_distribution(
     # Add subtitle with date range if enabled
     if subtitle:
         ax.set_title(
-            "%s - %s            \n"
-            % (
+            "{} - {}            \n".format(
                 returns.index.date[:1][0].strftime("%e %b '%y"),
                 returns.index.date[-1:][0].strftime("%e %b '%y"),
             ),
@@ -1550,7 +1519,7 @@ def plot_distribution(
 
     # Format y-axis as percentage
     ax.yaxis.set_major_formatter(
-        _plt.FuncFormatter(lambda x, loc: "{:,}%".format(int(x * 100)))
+        _plt.FuncFormatter(lambda x, loc: f"{int(x * 100):,}%")
     )
 
     # Configure y-axis label
@@ -1564,14 +1533,10 @@ def plot_distribution(
     fig.autofmt_xdate()
 
     # Adjust layout
-    try:
+    with contextlib.suppress(ValueError, AttributeError, TypeError, RuntimeError):
         _plt.subplots_adjust(hspace=0)
-    except (ValueError, AttributeError, TypeError, RuntimeError):
-        pass
-    try:
+    with contextlib.suppress(ValueError, AttributeError, TypeError, RuntimeError):
         fig.tight_layout(w_pad=0, h_pad=0)
-    except (ValueError, AttributeError, TypeError, RuntimeError):
-        pass
 
     # Handle saving and displaying
     if savefig:
@@ -1649,10 +1614,8 @@ def plot_table(
 
     # Set column names if provided
     if columns is not None:
-        try:
+        with contextlib.suppress(ValueError, AttributeError, TypeError, RuntimeError):
             tbl.columns = columns
-        except (ValueError, AttributeError, TypeError, RuntimeError):
-            pass
 
     # Create figure and axis
     fig = _plt.figure(figsize=figsize)
@@ -1707,14 +1670,10 @@ def plot_table(
     ax.set_yticks([])
 
     # Adjust layout
-    try:
+    with contextlib.suppress(ValueError, AttributeError, TypeError, RuntimeError):
         _plt.subplots_adjust(hspace=0)
-    except (ValueError, AttributeError, TypeError, RuntimeError):
-        pass
-    try:
+    with contextlib.suppress(ValueError, AttributeError, TypeError, RuntimeError):
         fig.tight_layout(w_pad=0, h_pad=0)
-    except (ValueError, AttributeError, TypeError, RuntimeError):
-        pass
 
     # Handle saving and displaying
     if savefig:
@@ -1764,7 +1723,7 @@ def format_cur_axis(x, _):
         res = "$%1.0fK" % (x * 1e-3)
         return res.replace(".0K", "K")
     # Format small values without suffix
-    res = "$%1.0f" % x
+    res = f"${x:1.0f}"
     return res.replace(".0", "")
 
 
@@ -1801,7 +1760,7 @@ def format_pct_axis(x, _):
         res = "%1.1fK%%" % (x * 1e-3)
         return res.replace(".0K%", "K%")
     # Format small percentage values without suffix
-    res = "%1.0f%%" % x
+    res = f"{x:1.0f}%"
     return res.replace(".0%", "%")
 
 

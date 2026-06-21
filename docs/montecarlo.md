@@ -1,7 +1,5 @@
 # Monte Carlo Simulations
 
-<img src="https://raw.githubusercontent.com/ranaroussi/pandas-montecarlo/master/demo.png" alt="Monte Carlo Simulation Demo" width="640">
-
 QuantStats includes built-in [Monte Carlo simulation](https://en.wikipedia.org/wiki/Monte_Carlo_method)
 capabilities for probabilistic risk analysis. Run thousands of simulations by shuffling
 historical returns to understand the range of possible outcomes for your strategy.
