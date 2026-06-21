@@ -66,7 +66,7 @@ if TYPE_CHECKING:
 # Type alias for return data (Series or DataFrame)
 Returns = _pd.Series | _pd.DataFrame
 
-_FLATUI_COLORS = ["#fedd78", "#348dc1", "#af4b64", "#4fa487", "#9b59b6", "#808080"]
+_FLATUI_COLORS = ["#5c5c5c", "#6b9e00", "#af4b64", "#4fa487", "#9b59b6", "#808080"]
 _GRAYSCALE_COLORS = (len(_FLATUI_COLORS) * ["black"]) + ["white"]
 
 # Check if plotly is available for optional conversion functionality

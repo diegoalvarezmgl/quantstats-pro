@@ -337,6 +337,10 @@ def html(
     full_title = f"{title} (Compounded)" if compounded else title
     tpl = tpl.replace("{{title}}", full_title)
     tpl = tpl.replace("{{v}}", __version__)
+    tpl = tpl.replace(
+        "{{generated_at}}",
+        _dt.now().strftime("%d %b, %Y %H:%M").lstrip("0"),
+    )
 
     # Build parameters string for subtitle
     params_parts = []

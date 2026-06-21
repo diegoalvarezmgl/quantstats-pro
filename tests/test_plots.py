@@ -54,6 +54,30 @@ class TestPlotFunctions:
         fig = plots.yearly_returns(sample_returns, show=False)
         assert fig is not None
 
+    def test_yearly_returns_xaxis_aligned_with_many_years(self, sample_benchmark):
+        """EOY bars must stay aligned with year labels (11+ years)."""
+        np.random.seed(42)
+        dates = pd.date_range("2016-01-01", periods=11 * 252, freq="B")
+        returns = pd.DataFrame(
+            {
+                "QQQ": np.random.randn(len(dates)) * 0.02,
+                "FEZ": np.random.randn(len(dates)) * 0.015,
+            },
+            index=dates,
+        )
+        fig = plots.yearly_returns(
+            returns, sample_benchmark, show=False, prepare_returns=False
+        )
+        ax = fig.axes[0]
+        ticks = ax.get_xticks()
+        bar_centers = [
+            patch.get_x() + patch.get_width() / 2
+            for patch in ax.containers[0].patches
+        ]
+        assert len(ticks) == len(bar_centers)
+        for tick, center in zip(ticks, bar_centers, strict=True):
+            assert abs(tick - center) < 0.5
+
     def test_histogram(self, sample_returns, sample_benchmark):
         """Test histogram plot."""
         fig = plots.histogram(sample_returns, sample_benchmark, show=False)
