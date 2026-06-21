@@ -79,8 +79,8 @@ _sns.set_theme(
 
 # Color palettes for different chart styles
 _FLATUI_COLORS = [
-    "#FEDD78",
-    "#348DC1",
+    "#5C5C5C",  # benchmark — medium dark gray
+    "#6B9E00",  # strategy — medium dark lime
     "#BA516B",
     "#4FA487",
     "#9B59B6",
@@ -226,6 +226,10 @@ def plot_returns_bars(
     if resample is not None:
         df = safe_resample(df, resample, _get_stats().comp)
         df = safe_resample(df, resample, "last")
+    # Use integer years on the x-axis so bar positions and tick labels stay aligned
+    if isinstance(df.index, _pd.DatetimeIndex):
+        df = df.copy()
+        df.index = df.index.year
     # ---------------
 
     # Create figure and axis
@@ -244,8 +248,8 @@ def plot_returns_bars(
     if subtitle:
         ax.set_title(
             "{} - {}           \n".format(
-                df.index.date[:1][0].strftime("%Y"),
-                df.index.date[-1:][0].strftime("%Y"),
+                df.index[0],
+                df.index[-1],
             ),
             fontsize=12,
             color="gray",
@@ -260,27 +264,15 @@ def plot_returns_bars(
     fig.set_facecolor("white")
     ax.set_facecolor("white")
 
-    # Format x-axis labels
-    try:
-        ax.set_xticklabels(df.index.year)
-        years = sorted(list(set(df.index.year)))
-    except AttributeError:
-        ax.set_xticklabels(df.index)
-        years = sorted(list(set(df.index)))
-
-    # ax.fmt_xdata = _mdates.DateFormatter('%Y-%m-%d')
-    # years = sorted(list(set(df.index.year)))
-
-    # Reduce label density for long time series
-    if len(years) > 10:
-        mod = int(len(years) / 10)
-        _plt.xticks(
-            _np.arange(len(years)),
-            [str(year) if not i % mod else "" for i, year in enumerate(years)],
-        )
-
-    # rotate and align the tick labels so they look better
-    fig.autofmt_xdate()
+    # Format x-axis labels (keep tick positions from the bar plot)
+    tick_labels = [str(year) for year in df.index]
+    if len(tick_labels) > 10:
+        mod = max(1, len(tick_labels) // 10)
+        tick_labels = [
+            label if i % mod == 0 else "" for i, label in enumerate(tick_labels)
+        ]
+    ax.set_xticks(ax.get_xticks())
+    ax.set_xticklabels(tick_labels)
 
     # Add horizontal line if specified
     if hline is not None and not isinstance(hline, _pd.Series):
@@ -1289,7 +1281,7 @@ def plot_longest_drawdowns(
         Figure object if show=False, otherwise None
     """
 
-    colors = ["#348dc1", "#003366", "red"]
+    colors = ["#6B9E00", "#5C5C5C", "red"]
     if grayscale:
         colors = ["#000000"] * 3
 

@@ -1,6 +1,16 @@
 Changelog
 ===========
 
+0.2.0
+-----
+
+**Reports**
+
+- HTML tearsheet: QuantStats Pro branding with GitHub link and generation timestamp
+- HTML tearsheet: dark table headers with white text for stronger contrast
+- Chart palette: strategy line lime green (`#6B9E00`), benchmark medium dark gray (`#5C5C5C`)
+- Fixed EOY returns bar chart x-axis misalignment when series spans more than 10 years
+
 0.1.3
 -----
 

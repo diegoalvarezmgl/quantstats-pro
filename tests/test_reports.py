@@ -95,6 +95,26 @@ class TestHTMLReport:
             if os.path.exists(output_path):
                 os.remove(output_path)
 
+    def test_html_quantstats_pro_branding(self, sample_returns, sample_benchmark):
+        """Test HTML tearsheet uses QuantStats Pro branding and styling."""
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".html", delete=False) as f:
+            output_path = f.name
+
+        try:
+            reports.html(sample_returns, sample_benchmark, output=output_path)
+            with open(output_path, "r") as f:
+                content = f.read()
+                assert "QuantStats Pro" in content
+                assert "quantstats.io" not in content
+                assert (
+                    "github.com/diegoalvarezmgl/quantstats-pro" in content
+                )
+                assert " at " in content
+                assert "table thead th{font-weight:700;background:#2d2d2d;color:#fff}" in content
+        finally:
+            if os.path.exists(output_path):
+                os.remove(output_path)
+
     def test_html_matched_dates_indicator(self, sample_returns, sample_benchmark):
         """Test matched dates indicator appears when appropriate."""
         with tempfile.NamedTemporaryFile(mode="w", suffix=".html", delete=False) as f:
