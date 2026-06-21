@@ -122,5 +122,11 @@ ignore = [
     "SIM108", # ternary operator
 ]
 
+[tool.ruff.lint.per-file-ignores]
+"quantstats/plots.py" = ["F403"]
+"quantstats/reports.py" = ["E402"]
+"quantstats/_plotting/core.py" = ["E402"]
+"quantstats/_plotting/wrappers.py" = ["E402"]
+
 [tool.ruff.lint.isort]
 known-first-party = ["quantstats"]

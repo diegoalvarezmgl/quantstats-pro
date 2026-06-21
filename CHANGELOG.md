@@ -8,7 +8,8 @@ Changelog
 
 - Removed legacy upstream config (`.travis.yml`, `.deepsource.toml`, `setup.cfg`, `.flake8`, `.claude/`)
 - README: local docs assets instead of upstream image URLs; fixed report mode quote typo
-- CI: added ruff and pyright jobs (informational until pre-existing lint debt is cleared)
+- CI: added ruff and pyright jobs (ruff blocking; pyright informational until typing debt is cleared)
+- Ruff: auto-fix and config for legacy import patterns; `quantstats/` now lint-clean
 - Dependabot: weekly schedule
 - Aligned `requirements.txt` with `pyproject.toml` (`pandas>=1.5.0`)
 - Package metadata: Diego Alvarez as fork maintainer

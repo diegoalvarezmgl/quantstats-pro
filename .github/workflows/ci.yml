@@ -32,7 +32,6 @@ jobs:
 
   lint:
     runs-on: ubuntu-latest
-    continue-on-error: true  # pre-existing upstream debt; make blocking once clean
     steps:
       - uses: actions/checkout@v7
 
@@ -48,6 +47,22 @@ jobs:
 
       - name: Ruff
         run: ruff check quantstats/
+
+  typecheck:
+    runs-on: ubuntu-latest
+    continue-on-error: true  # pre-existing upstream typing debt
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install dev dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
 
       - name: Pyright
         run: pyright quantstats/

@@ -17,13 +17,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import pandas as _pd
-import numpy as _np
-from math import sqrt as _sqrt, ceil as _ceil
-from datetime import datetime as _dt
-from base64 import b64encode as _b64encode
 import re as _regex
+from base64 import b64encode as _b64encode
+from datetime import datetime as _dt
+from math import ceil as _ceil
+from math import sqrt as _sqrt
+
+import numpy as _np
+import pandas as _pd
 from tabulate import tabulate as _tabulate
+
 from . import __version__
 
 # Lazy imports to avoid circular dependency during package initialization
@@ -54,14 +57,16 @@ def _get_plots():
         from . import plots
         _plots = plots
     return _plots
-from dateutil.relativedelta import relativedelta
-from io import StringIO
-from pathlib import Path
 import tempfile
 import webbrowser
+from io import StringIO
+from pathlib import Path
+
+from dateutil.relativedelta import relativedelta
 
 try:
-    from IPython.display import display as iDisplay, HTML as iHTML
+    from IPython.display import HTML as iHTML
+    from IPython.display import display as iDisplay
 except ImportError:
     pass  # IPython not available, display functions won't be used
 
@@ -279,9 +284,12 @@ def html(
 
     # Handle strategy title - can be single string or list for multiple columns
     strategy_title = kwargs.get("strategy_title", "Strategy")
-    if isinstance(returns, _pd.DataFrame):
-        if len(returns.columns) > 1 and isinstance(strategy_title, str):
-            strategy_title = list(returns.columns)
+    if (
+        isinstance(returns, _pd.DataFrame)
+        and len(returns.columns) > 1
+        and isinstance(strategy_title, str)
+    ):
+        strategy_title = list(returns.columns)
 
     # Process benchmark data if provided
     if benchmark is not None:
@@ -389,7 +397,7 @@ def html(
         for i in reversed(range(num_cols + 1, num_cols + 3)):
             str_td = "<td></td>" * i
             tpl = tpl.replace(
-                f"<tr>{str_td}</tr>", '<tr><td colspan="{}"><hr></td></tr>'.format(i)
+                f"<tr>{str_td}</tr>", f'<tr><td colspan="{i}"><hr></td></tr>'
             )
 
     # Clean up table formatting with horizontal rules
@@ -460,7 +468,7 @@ def html(
 
         # Combine all drawdown tables with headers
         dd_html_table = ""
-        for html_str, col in zip(dd_info_list, returns.columns):
+        for html_str, col in zip(dd_info_list, returns.columns, strict=False):
             dd_html_table = (
                 dd_html_table + f"<h3>{col}</h3><br>" + StringIO(html_str).read()
             )
@@ -852,9 +860,12 @@ def full(
     active = kwargs.get("active_returns", False)
 
     # Handle multiple strategy columns
-    if isinstance(returns, _pd.DataFrame):
-        if len(returns.columns) > 1 and isinstance(strategy_title, str):
-            strategy_title = list(returns.columns)
+    if (
+        isinstance(returns, _pd.DataFrame)
+        and len(returns.columns) > 1
+        and isinstance(strategy_title, str)
+    ):
+        strategy_title = list(returns.columns)
 
     # Set names for display purposes
     if benchmark is not None:
@@ -918,8 +929,7 @@ def full(
             for ptf, dd_info in dd_info_dict.items():
                 iDisplay(
                     iHTML(
-                        '<h4 style="margin-bottom:20px">%s - Worst 5 Drawdowns</h4>'
-                        % ptf
+                        f'<h4 style="margin-bottom:20px">{ptf} - Worst 5 Drawdowns</h4>'
                     )
                 )
                 if dd_info.empty:
@@ -1069,9 +1079,12 @@ def basic(
     active = kwargs.get("active_returns", False)
 
     # Handle multiple strategy columns
-    if isinstance(returns, _pd.DataFrame):
-        if len(returns.columns) > 1 and isinstance(strategy_title, str):
-            strategy_title = list(returns.columns)
+    if (
+        isinstance(returns, _pd.DataFrame)
+        and len(returns.columns) > 1
+        and isinstance(strategy_title, str)
+    ):
+        strategy_title = list(returns.columns)
 
     # Display results based on environment (notebook vs console)
     if _get_utils()._in_notebook():
@@ -1893,10 +1906,12 @@ def plots(
     active = kwargs.get("active", False)
 
     # Handle multiple strategy columns
-    if isinstance(returns, _pd.DataFrame):
-        if len(returns.columns) > 1:
-            if isinstance(strategy_colname, str):
-                strategy_colname = list(returns.columns)
+    if (
+        isinstance(returns, _pd.DataFrame)
+        and len(returns.columns) > 1
+        and isinstance(strategy_colname, str)
+    ):
+        strategy_colname = list(returns.columns)
 
     # Get trading periods for rolling window calculations
     win_year, win_half_year = _get_trading_periods(periods_per_year)
@@ -2500,7 +2515,7 @@ def _embed_figure(figfiles, figfmt):
             # For other formats, encode as base64 data URI
             data_uri = _b64encode(figbytes).decode()
             embed_string.join(
-                '<img src="data:image/{};base64,{}" />'.format(figfmt, data_uri)
+                f'<img src="data:image/{figfmt};base64,{data_uri}" />'
             )
     else:
         # Handle single figure
@@ -2510,6 +2525,6 @@ def _embed_figure(figfiles, figfmt):
             return figbytes.decode()
         # For other formats, encode as base64 data URI
         data_uri = _b64encode(figbytes).decode()
-        embed_string = '<img src="data:image/{};base64,{}" />'.format(figfmt, data_uri)
+        embed_string = f'<img src="data:image/{figfmt};base64,{data_uri}" />'
 
     return embed_string

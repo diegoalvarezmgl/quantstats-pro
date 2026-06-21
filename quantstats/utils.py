@@ -16,14 +16,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import io as _io
 import datetime as _dt
-import pandas as _pd
-import numpy as _np
-from ._compat import safe_yfinance_download
-from ._compat import safe_concat, safe_resample
 import inspect
+import io as _io
 import threading
+
+import numpy as _np
+import pandas as _pd
+
+from ._compat import safe_concat, safe_yfinance_download
 
 # Type alias for return data
 Returns = _pd.Series | _pd.DataFrame
@@ -96,7 +97,9 @@ def validate_input(data, allow_empty=False):
         try:
             data.index = _pd.to_datetime(data.index)
         except Exception:
-            raise DataValidationError("Input data must have a valid datetime index")
+            raise DataValidationError(
+                "Input data must have a valid datetime index"
+            ) from None
 
     return True
 
@@ -127,9 +130,7 @@ def _generate_cache_key(data, rf, nperiods):
     """
     try:
         # Create a hash from the data
-        if isinstance(data, _pd.Series):
-            data_hash = _pd.util.hash_pandas_object(data).sum()
-        elif isinstance(data, _pd.DataFrame):
+        if isinstance(data, (_pd.Series, _pd.DataFrame)):
             data_hash = _pd.util.hash_pandas_object(data).sum()
         else:
             data_hash = hash(str(data))
@@ -366,7 +367,7 @@ def to_log_returns(returns: Returns, rf: float = 0.0, nperiods: int | None = Non
         return _np.log(returns + 1).replace([_np.inf, -_np.inf], float("NaN"))  # type: ignore
     except (ValueError, TypeError, AttributeError, OverflowError) as e:
         from warnings import warn
-        warn(f"Error converting to log returns: {type(e).__name__}: {e}, returning 0.0")
+        warn(f"Error converting to log returns: {type(e).__name__}: {e}, returning 0.0", stacklevel=2)
         return 0.0
 
 
@@ -462,7 +463,7 @@ def aggregate_returns(returns: Returns, period: str | None = None, compounded: b
     # Convert to UTC if timezone-aware, then make naive
     if hasattr(returns.index, 'tz') and returns.index.tz is not None:
         returns = returns.tz_convert('UTC').tz_localize(None)
-    
+
     # Return original data if no period specified or daily period
     if period is None or "day" in period:
         return returns
@@ -637,15 +638,14 @@ def _prepare_returns(data, rf=0.0, nperiods=None):
     ]
 
     # Calculate excess returns if rf > 0 and function needs it
-    if function not in unnecessary_function_calls:
-        if rf > 0:
-            result = to_excess_returns(data, rf, nperiods)
-            # Cache the result
-            if cache_key:
-                _clear_cache_if_full()
-                with _cache_lock:
-                    _PREPARE_RETURNS_CACHE[cache_key] = result.copy()
-            return result
+    if function not in unnecessary_function_calls and rf > 0:
+        result = to_excess_returns(data, rf, nperiods)
+        # Cache the result
+        if cache_key:
+            _clear_cache_if_full()
+            with _cache_lock:
+                _PREPARE_RETURNS_CACHE[cache_key] = result.copy()
+        return result
 
     # Normalize timezone information for consistency
     # Convert to UTC if timezone-aware, then make naive
@@ -881,7 +881,7 @@ def make_index(
     portfolio = {}
 
     # Iterate over weights and get returns for each ticker
-    for ticker in ticker_weights.keys():
+    for ticker in ticker_weights:
         if (returns is None) or (ticker not in returns.columns):
             # Download the returns for this ticker, e.g. GOOG
             ticker_returns = download_returns(ticker, period)
