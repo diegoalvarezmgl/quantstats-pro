@@ -1,3 +1,4 @@
+[![PyPI version](https://img.shields.io/pypi/v/quantstats-pro.svg)](https://pypi.org/project/quantstats-pro/)
 [![Python version](https://img.shields.io/badge/python-3.10+-blue.svg?style=flat)](https://pypi.org/project/quantstats-pro/)
 [![CI](https://github.com/diegoalvarezmgl/quantstats-pro/actions/workflows/ci.yml/badge.svg)](https://github.com/diegoalvarezmgl/quantstats-pro/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE.txt)
@@ -13,6 +14,11 @@ pip install quantstats-pro   # replaces: pip install quantstats
 ```python
 import quantstats as qs       # import unchanged
 ```
+
+> **Note:** QuantStats Pro **cannot coexist** with the original `quantstats`
+> package in the same environment — both provide the `quantstats` import
+> namespace. Uninstall `quantstats` before installing `quantstats-pro`
+> (`pip uninstall quantstats`).
 
 [Changelog »](./CHANGELOG.md) · [Upstream »](https://github.com/ranaroussi/quantstats) · [Contributing »](./CONTRIBUTING.md)
 
@@ -274,6 +280,7 @@ pip install quantstats-pro --upgrade
 * [seaborn](https://seaborn.pydata.org) >= 0.13.0
 * [tabulate](https://bitbucket.org/astanin/python-tabulate) >= 0.9.0
 * [yfinance](https://github.com/ranaroussi/yfinance) >= 0.2.40
+* [arch](https://github.com/bashtage/arch) >= 6.0 (GARCH calibration for Monte Carlo)
 * [plotly](https://plot.ly/) >= 5.0.0 (optional, for using `plots.to_plotly()`)
 
 ## Questions?

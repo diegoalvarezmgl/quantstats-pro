@@ -2,10 +2,13 @@
 
 ## Supported versions
 
-| Version | Supported |
-| ------- | --------- |
-| 0.1.x   | Yes       |
-| < 0.1   | No        |
+| Version        | Supported |
+| -------------- | --------- |
+| Latest release | Yes       |
+| Older releases | No        |
+
+Only the latest published release receives security fixes. Please upgrade to
+the most recent version before reporting.
 
 ## Reporting a vulnerability
 

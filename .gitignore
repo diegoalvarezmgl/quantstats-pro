@@ -1,9 +1,16 @@
 *.pyc
 .idea
-__pycache__/*
+__pycache__/
 quantstats/__pycache__/*
 dist
 /build
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+.coverage
+htmlcov/
 /docs/build/doctrees/*
 /docs/build/html/*
 /docs/build/epub/*
