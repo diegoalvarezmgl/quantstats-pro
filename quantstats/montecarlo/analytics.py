@@ -83,6 +83,23 @@ def fan_chart(
     return median, lower, upper
 
 
+def historical_windows(returns: pd.Series, horizon: int) -> np.ndarray:
+    """All overlapping ``horizon``-length return windows from full history.
+
+    Returns an array of shape ``(horizon, n_windows)`` — the same layout as
+    ``sim_returns`` — so the empirical distribution of *realised* outcomes over
+    the entire history can be compared directly against simulated paths. If the
+    history is shorter than ``horizon``, a single truncated window is returned.
+    """
+    arr = pd.Series(returns).dropna().to_numpy(dtype=float)
+    if arr.size == 0:
+        return np.empty((0, 0), dtype=float)
+    if arr.size <= horizon:
+        return arr.reshape(-1, 1)
+    windows = np.lib.stride_tricks.sliding_window_view(arr, horizon)
+    return np.ascontiguousarray(windows.T)
+
+
 def historical_window(returns: pd.Series, horizon: int) -> np.ndarray:
     """Trailing ``horizon`` simple returns from history (1-D)."""
     arr = pd.Series(returns).dropna().to_numpy(dtype=float)
@@ -106,12 +123,17 @@ def historical_summary(
     bust: float | None = None,
     goal: float | None = None,
 ) -> dict[str, float]:
-    """Realised metrics on the trailing ``horizon`` window."""
-    window = historical_window(returns, horizon)
-    if window.size == 0:
+    """Empirical distribution of realised metrics over all rolling windows.
+
+    Uses every overlapping ``horizon``-length window of the full history, so
+    quantiles (CAGR p5/median/p95, MaxDD, CVaR, probabilities) describe what
+    actually happened across the whole sample — directly comparable with each
+    model's simulated distribution.
+    """
+    windows = historical_windows(returns, horizon)
+    if windows.size == 0:
         return {}
-    sim = window.reshape(-1, 1)
-    return summarize(sim, periods=periods, bust=bust, goal=goal)
+    return summarize(windows, periods=periods, bust=bust, goal=goal)
 
 
 def realism_percentile(sim_returns: np.ndarray, historical_terminal: float) -> float:

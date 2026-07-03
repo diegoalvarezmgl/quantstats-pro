@@ -176,11 +176,27 @@ class TestAnalytics:
         s = analytics.summarize(sim, periods=252.0)
         assert s["cvar_5"] <= s["cagr_p5"]
 
-    def test_historical_summary_matches_window(self, gbm_like_returns):
+    def test_historical_windows_shape(self, gbm_like_returns):
+        windows = analytics.historical_windows(gbm_like_returns, 252)
+        n = len(gbm_like_returns)
+        assert windows.shape == (252, n - 252 + 1)
+        # First column is the first 252 returns; last column the trailing 252.
+        arr = gbm_like_returns.to_numpy()
+        np.testing.assert_allclose(windows[:, 0], arr[:252])
+        np.testing.assert_allclose(windows[:, -1], arr[-252:])
+
+    def test_historical_windows_short_history(self):
+        s = pd.Series(np.full(100, 0.001))
+        windows = analytics.historical_windows(s, 252)
+        assert windows.shape == (100, 1)
+
+    def test_historical_summary_uses_rolling_distribution(self, gbm_like_returns):
         h = analytics.historical_summary(gbm_like_returns, 252, periods=252.0)
-        window = analytics.historical_window(gbm_like_returns, 252)
-        direct = analytics.summarize(window.reshape(-1, 1), periods=252.0)
+        windows = analytics.historical_windows(gbm_like_returns, 252)
+        direct = analytics.summarize(windows, periods=252.0)
         assert h["cagr_median"] == pytest.approx(direct["cagr_median"])
+        # A real distribution: p5 strictly below p95.
+        assert h["cagr_p5"] < h["cagr_p95"]
 
     def test_realism_percentile_bounds(self):
         rng = np.random.default_rng(0)

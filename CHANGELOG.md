@@ -14,9 +14,13 @@ Changelog
     instead of full history; pass `horizon=len(returns)` for full-history simulation.
   - `periods_per_year` defaults to **auto-inference** (252 for weekday-only data,
     365 when >5% of observations fall on weekends — crypto / 24-7).
-  - **Historical** row in the comparison table (trailing window matching horizon).
-  - Historical cumulative path overlaid on fan charts; historical terminal marked
-    on histograms; **Hist. Percentile** ranks the realised outcome within each model.
+  - **Historical** row in the comparison table: empirical distribution of realised
+    outcomes over **all overlapping horizon-length windows of the full history**
+    (e.g. ~2,260 rolling 1y windows on 10y of dailies), directly comparable with
+    each model's simulated quantiles.
+  - Historical rolling median path and 5–95% band overlaid on fan charts;
+    Historical box added to the drawdown boxplot and CAGR quantile chart;
+    **Hist. Percentile** ranks the historical median outcome within each model.
   - **Model Calibration** diagnostics table (annualised drift/vol and model-specific
     parameters).
   - CVaR labelled dynamically by horizon (e.g. `CVaR 5% (1y)`); computed on
@@ -27,7 +31,8 @@ Changelog
 
 - Fixed Heston double variance-drag bug (simulated drift now matches sample mean).
 - Fixed GARCH drift inflation (simulations anchored to sample mean, not MLE `mu`).
-- Removed `analytics.evaluate_strategy()`; added `historical_summary()`,
+- Removed `analytics.evaluate_strategy()`; added `historical_windows()`,
+  `historical_summary()` (rolling-window empirical distribution),
   `realism_percentile()`, `envelope_attribution()`, and `infer_periods_per_year()`.
 
 0.4.0

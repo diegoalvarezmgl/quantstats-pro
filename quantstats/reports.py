@@ -1113,7 +1113,7 @@ def _mc_comparison_html(rows, columns):
         "</tr></thead><tbody>",
     ]
     for model, row in rows.items():
-        row_cls = ' class="historical"' if model == "Historical" else ""
+        row_cls = ' class="historical"' if model.startswith("Historical") else ""
         parts.append(f"<tr{row_cls}><td><strong>{model}</strong></td>")
         for label, risk in active_cols:
             val = row.get(label, "—")
@@ -1299,17 +1299,16 @@ def html_montecarlo(
     mc_list = list(mc_results.values())
 
     used_horizon = next(iter(results.values())).horizon if results else 0
+    # Empirical distribution of realised outcomes: every overlapping
+    # horizon-length window over the full history (not just the last year).
+    hist_windows = _mca.historical_windows(returns, used_horizon)
     hist_summary = _mca.historical_summary(
         returns, used_horizon, periods=periods, bust=bust, goal=goal
     )
-    hist_cum = _mca.historical_cumulative(returns, used_horizon)
-    hist_window = _mca.historical_window(returns, used_horizon)
+    n_hist_windows = int(hist_windows.shape[1]) if hist_windows.size else 0
     hist_terminal = (
-        float(_np.prod(1.0 + hist_window) - 1.0) if hist_window.size else 0.0
-    )
-    hist_cagr = (
-        float(_mca.cagr_values(hist_window.reshape(-1, 1), periods)[0])
-        if hist_window.size
+        float(_np.median(_mca.terminal_values(hist_windows)))
+        if hist_windows.size
         else 0.0
     )
 
@@ -1337,7 +1336,8 @@ def html_montecarlo(
         for key, label, is_pct, _ in table_columns:
             if key in hist_summary:
                 hist_row[label] = _mc_format_value(key, hist_summary[key], is_pct)
-        mc_rows = {"Historical": hist_row, **mc_rows}
+        hist_label = f"Historical ({n_hist_windows:,} rolling windows)"
+        mc_rows = {hist_label: hist_row, **mc_rows}
     comparison_html = _mc_comparison_html(mc_rows, table_columns)
 
     if stress_results:
@@ -1356,10 +1356,14 @@ def html_montecarlo(
         return _embed_figure(figfile, figfmt)
 
     overlay_fig = _mcplt.overlay_fan_figure(
-        mc_list, level=confidence_level, historical_cum=hist_cum
+        mc_list, level=confidence_level, historical_windows=hist_windows
     )
-    maxdd_fig = _mcplt.maxdd_distribution_figure(mc_list)
-    cagr_fig = _mcplt.cagr_quantiles_figure(mc_list, historical_cagr=hist_cagr)
+    maxdd_fig = _mcplt.maxdd_distribution_figure(
+        mc_list, historical_windows=hist_windows
+    )
+    cagr_fig = _mcplt.cagr_quantiles_figure(
+        mc_list, historical_windows=hist_windows
+    )
 
     fan_parts = []
     hist_parts = []
@@ -1368,7 +1372,7 @@ def html_montecarlo(
             res,
             level=confidence_level,
             title=res.label,
-            historical_cum=hist_cum,
+            historical_windows=hist_windows,
         )
         fan_parts.append(f'<div class="cell">{_embed(fan_fig)}</div>')
         hist_fig = _mcplt.terminal_hist_figure(
