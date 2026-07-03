@@ -1042,6 +1042,9 @@ def histogram(
     ylabel: bool = True,
     subtitle: bool = True,
     compounded: bool = True,
+    xlim_quantile: float | None = None,
+    binwidth: float | None = None,
+    adaptive_bins: int | None = None,
     savefig: str | dict | None = None,
     show: bool = True,
     prepare_returns: bool = True,
@@ -1094,7 +1097,9 @@ def histogram(
             benchmark = _get_utils()._prepare_returns(benchmark)
 
     # Determine title based on resampling frequency
-    if resample == "W":
+    if resample in ("D", "B"):
+        title = "Daily "
+    elif resample == "W":
         title = "Weekly "
     elif resample == "ME":
         title = "Monthly "
@@ -1117,6 +1122,9 @@ def histogram(
         ylabel=ylabel,
         subtitle=subtitle,
         compounded=compounded,
+        xlim_quantile=xlim_quantile,
+        binwidth=binwidth,
+        adaptive_bins=adaptive_bins,
         savefig=savefig,
         show=show,
     )

@@ -1,6 +1,102 @@
 Changelog
 ===========
 
+0.4.0
+-----
+
+**Reports**
+
+- New `reports.html_alpha_decay()` — alpha-decay monitoring tearsheet for a
+  single asset. Computes 10 rolling risk metrics (CAGR, volatility, downside vol,
+  max/mean drawdown, win rate, VaR, Expected Shortfall, payoff ratio, skew)
+  over configurable windows (default 7/15/30 days), compares the latest window
+  against the historical distribution (z-score), and flags each cell with a
+  four-state traffic light (Excellent / Good / Warning / Critical). Includes a
+  health score (X/N), summary table, per-metric distribution charts, CUSUM
+  return-decay detector, and time-underwater duration analysis. Z-scores are
+  computed on a per-metric normalising transform — log(1+x) for CAGR, log for
+  volatility / downside vol / payoff ratio, log-severity for drawdowns / VaR /
+  Expected Shortfall, log-duration for time underwater — so the ±2σ/±3σ traffic
+  lights are statistically meaningful for skewed metrics. Figures embed as SVG.
+- Redesigned `reports.html_montecarlo()` tearsheet with actionable, conservative
+  metrics and clearer structure:
+  - **Strategy Assessment** — conservative envelope across Monte Carlo models
+    (worst-case CAGR p5, MaxDD p95 sizing figure, P(loss), CVaR 5%, P(bust))
+    with automatic PASS / CAUTION / FAIL verdict and configurable thresholds
+    (`max_acceptable_dd`, `bust_tolerance`).
+  - **Monte Carlo Models** — comparison table with risk-quantile columns
+    highlighted; redundant mean/terminal columns removed.
+  - **Stress Tests** — trimmed bootstrap models separated from neutral
+    simulations; drift `"zero"` / `"rf"` flagged as stress scenarios in the header.
+  - Consolidated charts: overlay fan chart, MaxDD sizing boxplot, CAGR quantile
+    ranges; per-model fan charts and terminal histograms moved to a collapsible
+    appendix.
+  - Reproducibility footer (sims, seed, horizon, drift, models).
+- Default embedded figure format for the Monte Carlo tearsheet is now `svg`.
+
+**Alpha Decay**
+
+- New `quantstats.alphadecay` package: rolling-window metric distributions,
+  z-score traffic lights, CUSUM change detection, and time-underwater analysis.
+- `alphadecay.analyze()` returns a structured `DecayResult` with per-metric,
+  per-window observations, health score, and SOTA diagnostics.
+
+**Monte Carlo**
+
+- Redesigned `analytics.summarize()` metrics: `cagr_p5/median/p95`, `maxdd_median/p95`,
+  `terminal_median`, `prob_loss`, `cvar_5` (plus optional `bust_prob` / `goal_prob`).
+- New `analytics.conservative_envelope()` and `analytics.evaluate_strategy()`.
+- Simulation models now declare a `category` (`"montecarlo"` or `"stress"`);
+  trimmed bootstraps are categorised as stress tests.
+
+0.3.0
+-----
+
+**Reports**
+
+- New `reports.html_simple()` — a leaner tearsheet for equity-curve evaluation.
+  Keeps cumulative/log returns, EOY returns, daily-returns distribution, rolling
+  volatility, drawdown periods and underwater plot. Drops the rolling
+  beta/Sharpe/Sortino charts, the cumulative daily-returns chart, the monthly
+  heatmap and the return-quantiles chart. The metrics table omits the
+  averages/ratios (Avg. Return/Win/Loss, Win/Loss Ratio, Profit Ratio,
+  Risk-Adjusted Return, Risk-Return Ratio) and the max-drawdown dates; the
+  worst-drawdowns table shows the top 5. The daily-returns distribution uses
+  adaptive bin width (~80 bins over the visible quantile range) with finer
+  x-axis tick labels, and the metrics-table group separators render as a
+  subtle gray rule. Fixed a daily histogram artefact where calendar-day
+  resample invented 0% returns on weekends/holidays, spiking the centre bin.
+- New `reports.html_montecarlo()` — a multi-model Monte Carlo tearsheet for a
+  single asset. Characterises the asset with several models and simulates
+  forward paths, producing a cross-model comparison table plus per-model fan
+  charts and terminal-return distributions.
+- The existing `reports.html()` is unchanged (full backwards compatibility).
+
+**Monte Carlo**
+
+- New `quantstats.montecarlo` engine with a common `SimulationModel` interface
+  (`calibrate` + `simulate`) and a model registry. Built-in models: GBM,
+  Jump-Diffusion (Merton), GARCH(1,1)-t, Heston (stochastic volatility),
+  IID Bootstrap, Block Bootstrap (Politis-White optimal block length), Trimmed
+  bootstraps (drop top 1% / 5%), Bayesian (conjugate Normal-Inverse-Gamma) and
+  Bayesian Bootstrap (Rubin), plus the legacy Shuffle.
+- `drift` option (`historical` / `zero` / `rf`) to keep, remove or rebase the
+  estimated drift before simulation, for risk-focused or comparable scenarios.
+
+**Bugfixes**
+
+- Fixed a returns cache collision: a Series and a single-column DataFrame with
+  identical values shared a cache entry, so stat functions could receive the
+  wrong type (e.g. `omega` getting a DataFrame). The cache key now distinguishes
+  type and column layout.
+- Fixed `reports.html()`/`metrics()` for single-column DataFrame inputs
+  (column-name assignment and `_calc_dd` MultiIndex handling).
+
+**Dependencies**
+
+- Added `arch>=6.0` as a base dependency (GARCH calibration). As a drop-in
+  replacement this is a deliberate, documented trade-off (see ADR-0008).
+
 0.2.0
 -----
 
