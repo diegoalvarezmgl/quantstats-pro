@@ -247,10 +247,7 @@ def plot_returns_bars(
     # Add subtitle with date range if enabled
     if subtitle:
         ax.set_title(
-            "{} - {}           \n".format(
-                df.index[0],
-                df.index[-1],
-            ),
+            f"{df.index[0]} - {df.index[-1]}           \n",
             fontsize=12,
             color="gray",
         )
