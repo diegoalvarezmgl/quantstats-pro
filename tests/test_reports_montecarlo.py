@@ -48,9 +48,12 @@ class TestMonteCarloTearsheet:
             asset_returns, models=["gbm", "bootstrap"], sims=100, horizon=120, seed=1
         )
         assert "Risk Summary" in content
+        assert "Median across Monte Carlo models" in content
         assert "Model Calibration" in content
         assert "Monte Carlo Models" in content
         assert "Stress Tests" in content
+        assert "Conservative Envelope" in content
+        assert "Envelope extremes across Monte Carlo models" in content
         assert "Historical" in content
         assert 'id="overlay_fan"' in content
         assert 'id="maxdd_dist"' in content
@@ -81,7 +84,11 @@ class TestMonteCarloTearsheet:
             seed=1,
         )
         assert "Trimmed (top 1%)" in content
-        assert "deliberately pessimistic" in content
+        assert "Trimmed Bootstrap" in content
+        stress_idx = content.index("Stress Tests")
+        trimmed_idx = content.index("Trimmed (top 1%)")
+        envelope_idx = content.index("Conservative Envelope")
+        assert stress_idx < envelope_idx < trimmed_idx
 
     def test_runs_all_models_by_default(self, asset_returns):
         content = _render(asset_returns, sims=50, horizon=80, seed=2)

@@ -8,8 +8,11 @@ Changelog
 
 - Redesigned `reports.html_montecarlo()` for institutional, informational use:
   - Removed PASS/CAUTION/FAIL verdict and tolerance thresholds (`max_acceptable_dd`,
-    `bust_tolerance`); replaced with neutral **Risk Summary** KPI cards and
-    envelope attribution table.
+    `bust_tolerance`); replaced with neutral **Risk Summary** KPI cards (median
+    across Monte Carlo models) and a **Stress Tests** section with the conservative
+    envelope and attribution table.
+  - Risk Summary KPI cards use a 3-column grid with risk/upside colour accents and
+    per-metric hints.
   - Default forward horizon is now **1 year** (`periods_per_year` trading days)
     instead of full history; pass `horizon=len(returns)` for full-history simulation.
   - `periods_per_year` defaults to **auto-inference** (252 for weekday-only data,
@@ -21,8 +24,8 @@ Changelog
   - Historical rolling median path and 5–95% band overlaid on fan charts;
     Historical box added to the drawdown boxplot and CAGR quantile chart;
     **Hist. Percentile** ranks the historical median outcome within each model.
-  - **Model Calibration** diagnostics table (annualised drift/vol and model-specific
-    parameters).
+  - **Model Calibration** diagnostics rendered as a compact collapsible section
+    (one row per model with its inline calibrated parameters).
   - CVaR labelled dynamically by horizon (e.g. `CVaR 5% (1y)`); computed on
     horizon terminal return.
   - Removed **Trimmed (top 5%)** stress model; Trimmed (top 1%) retained.
@@ -33,7 +36,8 @@ Changelog
 - Fixed GARCH drift inflation (simulations anchored to sample mean, not MLE `mu`).
 - Removed `analytics.evaluate_strategy()`; added `historical_windows()`,
   `historical_summary()` (rolling-window empirical distribution),
-  `realism_percentile()`, `envelope_attribution()`, and `infer_periods_per_year()`.
+  `realism_percentile()`, `model_median_summary()`, `envelope_attribution()`,
+  and `infer_periods_per_year()`.
 
 0.4.0
 -----

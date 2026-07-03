@@ -174,6 +174,37 @@ def summarize(
     return summary
 
 
+def model_median_summary(
+    results: dict[str, ModelResult],
+    category: str = "montecarlo",
+) -> dict[str, float]:
+    """Median metrics across models in a category (robust consensus view)."""
+    summaries = [
+        res.summary for res in results.values() if res.category == category
+    ]
+    if not summaries:
+        return {}
+
+    keys = (
+        "cagr_p5",
+        "cagr_median",
+        "cagr_p95",
+        "maxdd_median",
+        "maxdd_p95",
+        "terminal_median",
+        "prob_loss",
+        "cvar_5",
+        "bust_prob",
+        "goal_prob",
+    )
+    median: dict[str, float] = {}
+    for key in keys:
+        vals = [s[key] for s in summaries if key in s]
+        if vals:
+            median[key] = float(np.median(vals))
+    return median
+
+
 def conservative_envelope(
     results: dict[str, ModelResult],
     category: str = "montecarlo",

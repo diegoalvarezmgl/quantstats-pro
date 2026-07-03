@@ -217,6 +217,23 @@ class TestAnalytics:
         assert env["cagr_p5"] == min(s["cagr_p5"] for s in mc_summaries)
         assert env["prob_loss"] == max(s["prob_loss"] for s in mc_summaries)
 
+    def test_model_median_summary(self, gbm_like_returns):
+        results = run_models(
+            gbm_like_returns,
+            models=["gbm", "bootstrap", "trimmed_1pct"],
+            sims=100,
+            horizon=120,
+            seed=1,
+        )
+        med = analytics.model_median_summary(results)
+        mc_summaries = [r.summary for r in results.values() if r.category == "montecarlo"]
+        assert med["cagr_p5"] == pytest.approx(
+            float(np.median([s["cagr_p5"] for s in mc_summaries]))
+        )
+        assert med["prob_loss"] == pytest.approx(
+            float(np.median([s["prob_loss"] for s in mc_summaries]))
+        )
+
     def test_envelope_attribution(self, gbm_like_returns):
         results = run_models(
             gbm_like_returns,

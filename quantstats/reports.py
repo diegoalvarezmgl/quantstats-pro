@@ -1065,6 +1065,16 @@ _MC_KPI_METRICS = [
     ("bust_prob", "P(Bust)", True),
 ]
 
+# Visual tone and one-line hint for each KPI card.
+_MC_KPI_CARD_META = {
+    "cagr_p5": ("risk", "5% worst-case annual return"),
+    "cagr_median": ("upside", "central annual return scenario"),
+    "maxdd_p95": ("risk", "drawdown exceeded by 5% of paths"),
+    "prob_loss": ("risk", "paths ending below break-even"),
+    "cvar_5": ("risk", "average loss in the worst 5% tail"),
+    "bust_prob": ("risk", "paths hitting the bust drawdown"),
+}
+
 
 def _mc_format_value(key: str, val: float, is_pct: bool) -> str:
     if key == "realism_pct":
@@ -1124,28 +1134,53 @@ def _mc_comparison_html(rows, columns):
     return "".join(parts)
 
 
-def _mc_risk_summary_html(envelope, attribution, cvar_label: str):
-    """Neutral KPI cards and envelope attribution (no pass/fail verdict)."""
+def _mc_kpi_row_html(metrics: dict[str, float], cvar_label: str) -> str:
+    """KPI cards for a metrics dict (median or envelope)."""
     label_map = {key: label for key, label, _ in _MC_KPI_METRICS}
     label_map["cvar_5"] = cvar_label
 
-    parts = ['<div class="kpi-row">']
+    parts = ['<div class="kpi-grid">']
     for key, label, is_pct in _MC_KPI_METRICS:
-        if key not in envelope:
+        if key not in metrics:
             continue
-        val = envelope[key]
-        display = _mc_format_value(key, val, is_pct)
+        display = _mc_format_value(key, metrics[key], is_pct)
+        tone, hint = _MC_KPI_CARD_META.get(key, ("neutral", ""))
+        if tone == "upside" and metrics[key] < 0:
+            tone = "risk"
+        hint_html = f'<div class="hint">{hint}</div>' if hint else ""
         parts.append(
-            f'<div class="kpi"><div class="label">{label_map.get(key, label)}</div>'
-            f'<div class="value">{display}</div></div>'
+            f'<div class="kpi {tone}"><div class="label">{label_map.get(key, label)}</div>'
+            f'<div class="value">{display}</div>{hint_html}</div>'
         )
     parts.append("</div>")
+    return "".join(parts)
 
+
+def _mc_risk_summary_html(median: dict[str, float], cvar_label: str) -> str:
+    """Neutral KPI cards: median across Monte Carlo models."""
+    if not median:
+        return '<p class="note">No Monte Carlo models in this run.</p>'
+    return _mc_kpi_row_html(median, cvar_label)
+
+
+def _mc_envelope_attribution_html(
+    envelope: dict[str, float],
+    attribution: dict[str, str],
+    cvar_label: str,
+) -> str:
+    """Conservative envelope KPIs and per-metric source model attribution."""
+    if not envelope:
+        return ""
+    label_map = {key: label for key, label, _ in _MC_KPI_METRICS}
+    label_map["cvar_5"] = cvar_label
+
+    parts = [
+        '<h4>Conservative Envelope</h4>',
+        _mc_kpi_row_html(envelope, cvar_label),
+        '<p class="note">Envelope extremes across Monte Carlo models '
+        "(most conservative quantiles).</p>",
+    ]
     if attribution:
-        parts.append(
-            '<p class="note">Envelope extremes across Monte Carlo models '
-            "(most conservative quantiles).</p>"
-        )
         parts.append(
             "<table><thead><tr><th>Metric</th><th>Envelope</th>"
             "<th>Source Model</th></tr></thead><tbody>"
@@ -1163,29 +1198,43 @@ def _mc_risk_summary_html(envelope, attribution, cvar_label: str):
     return "".join(parts)
 
 
-def _mc_calibration_html(results):
-    """Per-model calibration diagnostics table."""
-    param_keys: list[str] = []
-    for res in results.values():
-        for k in res.calibration_summary():
-            if k not in param_keys:
-                param_keys.append(k)
-    if not param_keys:
-        return '<p class="note">No calibration diagnostics available.</p>'
+def _mc_stress_section_html(
+    stress_comparison_html: str,
+    envelope: dict[str, float],
+    attribution: dict[str, str],
+    cvar_label: str,
+) -> str:
+    """Stress block: conservative envelope plus trimmed-bootstrap models."""
+    parts = [_mc_envelope_attribution_html(envelope, attribution, cvar_label)]
+    if stress_comparison_html:
+        parts.append("<h4>Trimmed Bootstrap</h4>")
+        parts.append(stress_comparison_html)
+    elif not envelope:
+        parts.append('<p class="note">No stress-test models in this run.</p>')
+    return "".join(parts)
 
-    parts = [
-        "<table><thead><tr><th>Model</th>",
-        *[f"<th>{k}</th>" for k in param_keys],
-        "</tr></thead><tbody>",
-    ]
+
+def _mc_calibration_html(results):
+    """Per-model calibration diagnostics: one compact row per model.
+
+    Each model exposes a different parameter set, so a wide matrix would be
+    mostly empty. Render Model | inline "key: value" pairs instead.
+    """
+    rows = []
     for res in results.values():
         cal = res.calibration_summary()
-        parts.append(f"<tr><td>{res.label}</td>")
-        for k in param_keys:
-            parts.append(f"<td>{cal.get(k, '—')}</td>")
-        parts.append("</tr>")
-    parts.append("</tbody></table>")
-    return "".join(parts)
+        if not cal:
+            continue
+        params = " &nbsp;&bull;&nbsp; ".join(
+            f"{k}: <strong>{v}</strong>" for k, v in cal.items()
+        )
+        rows.append(f'<tr><td>{res.label}</td><td class="params">{params}</td></tr>')
+    if not rows:
+        return '<p class="note">No calibration diagnostics available.</p>'
+    return (
+        "<table><thead><tr><th>Model</th><th>Calibrated Parameters</th>"
+        "</tr></thead><tbody>" + "".join(rows) + "</tbody></table>"
+    )
 
 
 def html_montecarlo(
@@ -1326,9 +1375,10 @@ def html_montecarlo(
         for k, lbl, pct, risk in _MC_TABLE_COLUMNS
     ]
 
-    envelope = _mca.conservative_envelope(results)
-    attribution = _mca.envelope_attribution(results, envelope)
-    assessment_html = _mc_risk_summary_html(envelope, attribution, cvar_label)
+    median = _mca.model_median_summary(mc_results)
+    envelope = _mca.conservative_envelope(mc_results)
+    attribution = _mca.envelope_attribution(mc_results, envelope)
+    assessment_html = _mc_risk_summary_html(median, cvar_label)
 
     mc_rows = _mc_build_rows(mc_results, table_columns, extra=realism_extra)
     if hist_summary:
@@ -1342,9 +1392,12 @@ def html_montecarlo(
 
     if stress_results:
         stress_rows = _mc_build_rows(stress_results, table_columns)
-        stress_html = _mc_comparison_html(stress_rows, table_columns)
+        stress_comparison_html = _mc_comparison_html(stress_rows, table_columns)
     else:
-        stress_html = '<p class="note">No stress-test models in this run.</p>'
+        stress_comparison_html = ""
+    stress_html = _mc_stress_section_html(
+        stress_comparison_html, envelope, attribution, cvar_label
+    )
 
     calibration_html = _mc_calibration_html(results)
     model_names = list(results.keys())
