@@ -40,6 +40,37 @@ _STATUS_COLORS = {
 }
 
 
+def _underwater_hist_bounds(
+    dist: np.ndarray,
+    mean: float,
+    current_days: int,
+    is_underwater: bool,
+    *,
+    percentile: float = 90.0,
+) -> tuple[float, np.ndarray, int, float]:
+    """
+    Pick a readable histogram x-range for completed spell lengths.
+
+    Completed spells are heavily right-skewed: a single 400-day episode
+    would stretch the axis to 400 even when mean ≈ 13 and current ≈ 12.
+    We cap the axis at roughly the p90 bulk, always including mean and the
+    current spell, and return outlier counts for an annotation.
+    """
+    markers = max(mean, float(current_days) if is_underwater else 0.0)
+    if len(dist) == 0:
+        return max(markers * 1.25, 10.0), dist, 0, 0.0
+
+    p = float(np.percentile(dist, percentile))
+    upper = max(markers * 1.25, p * 1.05, 12.0)
+    mx = float(dist.max())
+    if mx <= upper:
+        return upper + 1, dist, 0, mx
+
+    in_range = dist[dist <= upper]
+    beyond = dist[dist > upper]
+    return upper, in_range, int(len(beyond)), float(beyond.max())
+
+
 def metric_distribution_figure(
     result: WindowResult,
     spec: MetricSpec,
@@ -138,11 +169,25 @@ def time_underwater_figure(
         return fig
 
     color = _STATUS_COLORS.get(tuw.status, _PRIMARY)
-    upper = float(max(dist.max(), tuw.current_days if tuw.is_underwater else 0))
-    width = max(1, int(np.ceil(upper / 40.0)))
+    upper, hist_dist, n_beyond, longest_beyond = _underwater_hist_bounds(
+        dist, tuw.mean, tuw.current_days, tuw.is_underwater
+    )
+    width = max(1, int(np.ceil(upper / 30.0)))
     edges = np.arange(0.5, upper + width + 0.5, width)
-    ax.hist(dist, bins=edges, color=_PRIMARY, alpha=0.55, edgecolor="white")
-    ax.set_xlim(0, upper * 1.05 + 1)
+    ax.hist(hist_dist, bins=edges, color=_PRIMARY, alpha=0.55, edgecolor="white")
+    ax.set_xlim(0, upper * 1.03 + 1)
+    if n_beyond > 0:
+        ax.text(
+            0.98,
+            0.97,
+            f"+{n_beyond} spell{'s' if n_beyond != 1 else ''} > {upper:.0f}d"
+            f"\n(longest {longest_beyond:.0f}d)",
+            transform=ax.transAxes,
+            ha="right",
+            va="top",
+            fontsize=7,
+            color="#666",
+        )
     ax.axvline(tuw.mean, color=_MEDIAN, lw=1.4, ls="--", label=f"Mean ({tuw.mean:.0f}d)")
     if tuw.is_underwater:
         ax.axvline(

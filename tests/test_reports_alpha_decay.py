@@ -13,13 +13,17 @@ import pytest
 from quantstats import reports
 
 
-@pytest.fixture
-def asset_returns():
+def _make_returns():
     rng = np.random.default_rng(3)
     n = 400
     log_r = rng.normal(0.0003, 0.012, n)
     dates = pd.date_range("2018-01-01", periods=n, freq="B")
     return pd.Series(np.expm1(log_r), index=dates, name="QQQ")
+
+
+@pytest.fixture(scope="module")
+def asset_returns():
+    return _make_returns()
 
 
 def _render(returns, **kwargs):
@@ -34,15 +38,21 @@ def _render(returns, **kwargs):
             os.remove(path)
 
 
+@pytest.fixture(scope="module")
+def default_render(asset_returns):
+    """Default-parameter tearsheet rendered once and shared across tests."""
+    return _render(asset_returns)
+
+
 class TestAlphaDecayTearsheet:
-    def test_generates_valid_html(self, asset_returns):
-        content = _render(asset_returns)
+    def test_generates_valid_html(self, default_render):
+        content = default_render
         assert "<!DOCTYPE html>" in content
         assert "Alpha Decay Tearsheet" in content
         assert not re.search(r"\{\{\s*\w+\s*\}\}", content)
 
-    def test_contains_summary_and_sections(self, asset_returns):
-        content = _render(asset_returns)
+    def test_contains_summary_and_sections(self, default_render):
+        content = default_render
         assert "Health Summary" in content
         assert "Metric Distributions" in content
         assert "Structural Decay Diagnostics" in content
@@ -51,8 +61,8 @@ class TestAlphaDecayTearsheet:
         assert 'id="cusum_chart"' in content
         assert 'id="time_underwater"' in content
 
-    def test_score_and_badges_present(self, asset_returns):
-        content = _render(asset_returns)
+    def test_score_and_badges_present(self, default_render):
+        content = default_render
         assert re.search(r"\d+/\d+", content)
         assert 'class="badge' in content
         assert "Excellent" in content or "Good" in content
@@ -74,6 +84,6 @@ class TestAlphaDecayTearsheet:
         content = _render(df)
         assert "QQQ" in content
 
-    def test_cusum_section(self, asset_returns):
-        content = _render(asset_returns, cusum_k=0.5, cusum_h=4.0)
-        assert "CUSUM" in content
+    def test_cusum_section(self, default_render):
+        # cusum_k=0.5 / cusum_h=4.0 are the defaults used by default_render
+        assert "CUSUM" in default_render

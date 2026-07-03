@@ -177,6 +177,13 @@ def _compute_metric(
     rf: float,
     periods: float,
 ) -> float:
+    """
+    Reference (non-vectorised) implementation of one metric on one window.
+
+    Kept as ground truth for the vectorised fast path in
+    ``_rolling_metrics_matrix`` — the parity test in tests/test_alphadecay.py
+    asserts both produce identical values.
+    """
     stats = _stats()
     w = window.dropna()
     if len(w) < 2:
@@ -209,17 +216,21 @@ def _classify_underwater_status(z: float, is_underwater: bool) -> TrafficLight:
     """
     Traffic light for an *ongoing* underwater spell vs completed historical spells.
 
-    Z is on log(duration).  z > 0 means the current spell is already longer
-    than a typical completed spell — that is never "good", only acceptable when
-    barely above the historical norm (z <= 1.5 → warning, else critical).
+    Z is on log(duration).  Thresholds match the metric traffic lights
+    (lower-is-better convention): being longer than the log-mean spell is
+    normal — spell lengths are right-skewed, so under a ~lognormal model
+    z ≤ 2 covers ~98% of typical spells.  Only clearly abnormal durations
+    escalate: z > 2 → warning, z > 3 → critical.
     """
     if not is_underwater:
         return "excellent"
     if np.isnan(z):
-        return "warning"
-    if z <= 0:
         return "good"
-    if z <= 1.5:
+    if z < 0:
+        return "excellent"
+    if z <= 2:
+        return "good"
+    if z <= 3:
         return "warning"
     return "critical"
 
@@ -315,6 +326,104 @@ class DecayResult:
         return 100.0 * self.score / self.total if self.total else 0.0
 
 
+def _rolling_metrics_matrix(
+    returns: pd.Series,
+    window: int,
+    periods: float,
+) -> dict[str, np.ndarray]:
+    """
+    Compute every metric for all rolling windows of one size in a single
+    vectorised pass.
+
+    ``sliding_window_view`` builds an (n−w+1, w) view of the return array (no
+    copy), and each metric is evaluated column-wise with numpy.  This replaces
+    ``rolling().apply(python_callback)``, which invoked the full quantstats
+    metric stack ~n times per metric per window (~12k Python calls per
+    ``analyze()``) and dominated runtime.
+
+    Formulas replicate quantstats.stats exactly (see ``_compute_metric``, the
+    reference implementation, and the parity test):
+
+    - cagr: compounded total return annualised by w/periods.  Note that
+      ``stats.cagr`` ignores ``rf`` internally (it is in the
+      ``unnecessary_function_calls`` list of ``_prepare_returns``), so the
+      vectorised version takes no rf either.
+    - volatility: sample std (ddof=1) × √periods.
+    - downside_vol: √(Σ min(r,0)² / w) × √periods (full-window denominator).
+    - max/mean drawdown: equity = cumprod(1+r) with a baseline of 1.0
+      (matching ``to_drawdown_series``'s phantom start), running max, min/mean.
+    - var_95: Gaussian VaR — norm.ppf(0.05, μ, σ) with sample moments.
+    - cvar_95: mean of returns strictly below VaR; falls back to VaR when no
+      return is below it (this also removes the "Mean of empty slice"
+      RuntimeWarning the old path emitted thousands of times).
+    - win_rate: wins / non-zero returns (0.0 when no non-zero returns).
+    - payoff_ratio: mean(wins) / |mean(losses)|; NaN when there are no losses.
+    - skew: pandas' adjusted Fisher–Pearson estimator
+      g1 · √(w(w−1))/(w−2).
+    """
+    from scipy.stats import norm as _norm
+
+    arr = returns.to_numpy(dtype=float)
+    w = window
+    mat = np.lib.stride_tricks.sliding_window_view(arr, w)
+    m = mat.shape[0]
+    out: dict[str, np.ndarray] = {}
+
+    if m == 0 or w < 2:
+        empty = np.full(max(m, 0), np.nan)
+        return {spec.key: empty.copy() for spec in METRIC_SPECS}
+
+    sqrt_periods = np.sqrt(periods)
+    mu = mat.mean(axis=1)
+    std = mat.std(axis=1, ddof=1)
+
+    total = np.prod(1.0 + mat, axis=1) - 1.0
+    years = w / periods
+    out["cagr"] = np.abs(total + 1.0) ** (1.0 / years) - 1.0
+
+    out["volatility"] = std * sqrt_periods
+
+    downside = np.where(mat < 0, mat, 0.0)
+    out["downside_vol"] = np.sqrt((downside**2).sum(axis=1) / w) * sqrt_periods
+
+    equity = np.cumprod(1.0 + mat, axis=1)
+    running_max = np.maximum(np.maximum.accumulate(equity, axis=1), 1.0)
+    dd = equity / running_max - 1.0
+    out["max_drawdown"] = dd.min(axis=1)
+    out["mean_drawdown"] = dd.mean(axis=1)
+
+    nonzero = (mat != 0).sum(axis=1)
+    wins = (mat > 0).sum(axis=1)
+    out["win_rate"] = np.where(nonzero > 0, wins / np.maximum(nonzero, 1), 0.0)
+
+    var = _norm.ppf(0.05, mu, std)
+    below = mat < var[:, None]
+    below_cnt = below.sum(axis=1)
+    below_sum = np.where(below, mat, 0.0).sum(axis=1)
+    out["var_95"] = var
+    out["cvar_95"] = np.where(
+        below_cnt > 0, below_sum / np.maximum(below_cnt, 1), var
+    )
+
+    pos_cnt = wins
+    neg_cnt = (mat < 0).sum(axis=1)
+    pos_sum = np.where(mat > 0, mat, 0.0).sum(axis=1)
+    neg_sum = np.where(mat < 0, mat, 0.0).sum(axis=1)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        avg_win = np.where(pos_cnt > 0, pos_sum / np.maximum(pos_cnt, 1), np.nan)
+        avg_loss = np.where(neg_cnt > 0, neg_sum / np.maximum(neg_cnt, 1), np.nan)
+        out["payoff_ratio"] = avg_win / np.abs(avg_loss)
+
+    dev = mat - mu[:, None]
+    m2 = (dev**2).mean(axis=1)
+    m3 = (dev**3).mean(axis=1)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        g1 = m3 / m2**1.5
+    out["skew"] = g1 * np.sqrt(w * (w - 1.0)) / (w - 2.0)
+
+    return out
+
+
 def _rolling_metric_series(
     returns: pd.Series,
     window: int,
@@ -322,6 +431,12 @@ def _rolling_metric_series(
     rf: float,
     periods: float,
 ) -> pd.Series:
+    """Single-metric rolling series via the reference implementation (slow path).
+
+    Retained for API compatibility and the vectorisation parity test;
+    ``analyze()`` uses ``_rolling_metrics_matrix`` instead.
+    """
+
     def _apply(window_series: pd.Series) -> float:
         return _compute_metric(window_series, key, rf, periods)
 
@@ -329,11 +444,13 @@ def _rolling_metric_series(
 
 
 def _window_result(
-    series: pd.Series,
+    values: np.ndarray | pd.Series,
     window: int,
     spec: MetricSpec,
 ) -> WindowResult:
-    clean = series.dropna()
+    if isinstance(values, pd.Series):
+        values = values.to_numpy(dtype=float)
+    clean = values[~np.isnan(values)]
     if len(clean) == 0:
         return WindowResult(
             window=window,
@@ -349,8 +466,8 @@ def _window_result(
             percentile=np.nan,
         )
 
-    observed = float(clean.iloc[-1])
-    dist = clean.to_numpy(dtype=float)
+    observed = float(clean[-1])
+    dist = clean
     mean = float(np.mean(dist))
     std = float(np.std(dist, ddof=1)) if len(dist) > 1 else 0.0
 
@@ -558,11 +675,14 @@ def analyze(
     score = 0
     total = 0
 
+    # One vectorised pass per window size covers all metrics (rf is unused by
+    # the metric formulas — see _rolling_metrics_matrix).
+    per_window = {w: _rolling_metrics_matrix(returns, w, periods) for w in windows}
+
     for spec in METRIC_SPECS:
         mr = MetricResult(spec=spec)
         for window in windows:
-            rolling = _rolling_metric_series(returns, window, spec.key, rf, periods)
-            wr = _window_result(rolling, window, spec)
+            wr = _window_result(per_window[window][spec.key], window, spec)
             mr.windows[window] = wr
             total += 1
             if wr.status in ("excellent", "good"):

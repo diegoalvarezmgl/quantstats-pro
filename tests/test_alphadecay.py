@@ -179,7 +179,90 @@ class TestTransforms:
     def test_time_underwater_status_for_long_spell(self):
         from quantstats.alphadecay.core import _classify_underwater_status
 
-        assert _classify_underwater_status(2.5, is_underwater=True) == "critical"
-        assert _classify_underwater_status(1.0, is_underwater=True) == "warning"
-        assert _classify_underwater_status(-0.5, is_underwater=True) == "good"
+        # Thresholds match the lower-is-better metric traffic lights
+        assert _classify_underwater_status(3.5, is_underwater=True) == "critical"
+        assert _classify_underwater_status(2.5, is_underwater=True) == "warning"
+        assert _classify_underwater_status(0.89, is_underwater=True) == "good"
+        assert _classify_underwater_status(-0.5, is_underwater=True) == "excellent"
         assert _classify_underwater_status(0.0, is_underwater=False) == "excellent"
+
+
+class TestUnderwaterChartBounds:
+    def test_caps_axis_when_long_tail_outlier(self):
+        from quantstats.alphadecay.plotting import _underwater_hist_bounds
+
+        dist = np.array([5, 8, 10, 12, 15, 20, 25, 30, 500], dtype=float)
+        upper, hist, n_beyond, longest = _underwater_hist_bounds(
+            dist, mean=13.0, current_days=12, is_underwater=True
+        )
+        assert upper < 500
+        assert upper >= 15  # covers mean/current
+        assert n_beyond == 1
+        assert longest == 500
+        assert 500 not in hist
+
+    def test_extends_for_long_current_spell(self):
+        from quantstats.alphadecay.plotting import _underwater_hist_bounds
+
+        dist = np.array([5, 10, 15, 20, 25], dtype=float)
+        upper, _, n_beyond, _ = _underwater_hist_bounds(
+            dist, mean=15.0, current_days=102, is_underwater=True
+        )
+        assert upper >= 102 * 1.25
+        assert n_beyond == 0
+
+
+class TestVectorisedParity:
+    """The vectorised fast path must match the reference quantstats formulas."""
+
+    @pytest.mark.parametrize("window", [7, 15, 30])
+    def test_matches_reference_implementation(self, window):
+        from quantstats.alphadecay.core import (
+            _rolling_metric_series,
+            _rolling_metrics_matrix,
+        )
+
+        rng = np.random.default_rng(11)
+        n = 90
+        rets = pd.Series(
+            np.expm1(rng.normal(0.0004, 0.012, n)),
+            index=pd.date_range("2022-01-01", periods=n, freq="B"),
+        )
+        fast = _rolling_metrics_matrix(rets, window, periods=252.0)
+        for spec in METRIC_SPECS:
+            slow = (
+                _rolling_metric_series(rets, window, spec.key, rf=0.0, periods=252.0)
+                .to_numpy(dtype=float)[window - 1 :]
+            )
+            np.testing.assert_allclose(
+                fast[spec.key],
+                slow,
+                rtol=1e-9,
+                atol=1e-12,
+                equal_nan=True,
+                err_msg=f"metric={spec.key} window={window}",
+            )
+
+    def test_all_positive_window_edge_case(self):
+        # No losses: downside vol = 0, max DD = 0, payoff = NaN, win rate = 1
+        from quantstats.alphadecay.core import (
+            _rolling_metric_series,
+            _rolling_metrics_matrix,
+        )
+
+        rets = pd.Series([0.01] * 6 + [0.02] * 6)
+        out = _rolling_metrics_matrix(rets, 6, periods=252.0)
+        assert np.all(out["downside_vol"] == 0.0)
+        assert np.all(out["max_drawdown"] == 0.0)
+        assert np.all(np.isnan(out["payoff_ratio"]))
+        assert np.all(out["win_rate"] == 1.0)
+        # CVaR must match the reference even in the degenerate all-positive case
+        # (constant windows -> std=0 -> VaR is NaN in both implementations)
+        for key in ("var_95", "cvar_95"):
+            slow = (
+                _rolling_metric_series(rets, 6, key, rf=0.0, periods=252.0)
+                .to_numpy(dtype=float)[5:]
+            )
+            np.testing.assert_allclose(
+                out[key], slow, rtol=1e-9, equal_nan=True, err_msg=key
+            )

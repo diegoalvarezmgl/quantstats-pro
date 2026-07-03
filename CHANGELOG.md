@@ -18,6 +18,9 @@ Changelog
   volatility / downside vol / payoff ratio, log-severity for drawdowns / VaR /
   Expected Shortfall, log-duration for time underwater — so the ±2σ/±3σ traffic
   lights are statistically meaningful for skewed metrics. Figures embed as SVG.
+  Rolling metrics are computed in a single vectorised numpy pass per window
+  size (`sliding_window_view`) instead of per-window Python callbacks, making
+  `alphadecay.analyze()` run in milliseconds on multi-year daily series.
 - Redesigned `reports.html_montecarlo()` tearsheet with actionable, conservative
   metrics and clearer structure:
   - **Strategy Assessment** — conservative envelope across Monte Carlo models
