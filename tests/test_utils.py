@@ -52,6 +52,24 @@ class TestPrepareReturns:
         assert isinstance(result, pd.DataFrame)
         assert len(result.columns) == 2
 
+    def test_series_and_single_col_frame_do_not_collide(self, sample_returns):
+        """A Series and a 1-col DataFrame with identical values must not share
+        a cache entry (regression: hash collision returned wrong type)."""
+        utils._PREPARE_RETURNS_CACHE.clear()
+        frame = pd.DataFrame({"returns": sample_returns})
+        # Prime the cache with the DataFrame first
+        out_frame = utils._prepare_returns(frame)
+        # Then request the Series with the same underlying values
+        out_series = utils._prepare_returns(sample_returns)
+        assert isinstance(out_frame, pd.DataFrame)
+        assert isinstance(out_series, pd.Series)
+
+    def test_cache_key_distinguishes_series_from_frame(self, sample_returns):
+        frame = pd.DataFrame({"returns": sample_returns})
+        k_series = utils._generate_cache_key(sample_returns, 0.0, None)
+        k_frame = utils._generate_cache_key(frame, 0.0, None)
+        assert k_series != k_frame
+
 
 class TestToReturns:
     """Test to_returns function."""

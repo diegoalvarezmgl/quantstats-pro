@@ -372,7 +372,9 @@ def html(
     if isinstance(returns, _pd.Series):
         returns.name = strategy_title
     elif isinstance(returns, _pd.DataFrame):
-        returns.columns = strategy_title
+        returns.columns = (
+            strategy_title if isinstance(strategy_title, list) else [strategy_title]
+        )
 
     # Generate comprehensive performance metrics table
     mtrx = metrics(
@@ -786,6 +788,840 @@ def html(
     # Write HTML content to specified output file
     with open(output, "w", encoding="utf-8") as f:
         f.write(tpl)
+
+
+# Metric rows removed from the simple tearsheet (matched by normalized label,
+# i.e. case-insensitive and ignoring '%').
+_SIMPLE_DROP_METRICS = [
+    "Max DD Date",
+    "Max DD Period Start",
+    "Max DD Period End",
+    "Risk-Adjusted Return",
+    "Risk-Return Ratio",
+    "Avg. Return",
+    "Avg. Win",
+    "Avg. Loss",
+    "Win/Loss Ratio",
+    "Profit Ratio",
+]
+
+
+def html_simple(
+    returns,
+    benchmark=None,
+    rf=0.0,
+    grayscale=False,
+    title="Strategy Tearsheet",
+    output=None,
+    compounded=True,
+    periods_per_year=252,
+    download_filename="quantstats-tearsheet.html",
+    figfmt="svg",
+    template_path=None,
+    match_dates=True,
+    **kwargs,
+):
+    """
+    Generate a simplified HTML tearsheet for equity-curve evaluation.
+
+    A leaner variant of :func:`html` that keeps the metrics and charts most
+    relevant when judging an equity curve, and drops noisier sections. Relative
+    to the full report it removes the rolling beta/Sharpe/Sortino charts, the
+    cumulative daily-returns chart, the monthly-returns heatmap and the return
+    quantiles chart; the monthly-returns histogram is replaced by a daily one.
+    The metrics table drops averages/ratios and max-drawdown dates, and the
+    worst-drawdowns table is limited to the top 5.
+
+    Parameters mirror :func:`html`. ``returns`` should be a daily-returns Series
+    (or single/multi-column DataFrame). ``benchmark`` is optional.
+    """
+    from ._reporting import engine, sections
+
+    if match_dates:
+        returns = returns.dropna()
+
+    win_year, win_half_year = _get_trading_periods(periods_per_year)
+
+    if template_path is None:
+        template_path = Path(__file__).parent / "report_simple.html"
+    else:
+        template_path = Path(template_path)
+    template_path = template_path.resolve()
+    if not template_path.exists():
+        raise FileNotFoundError(f"Template file not found: {template_path}")
+    if not template_path.is_file():
+        raise ValueError(f"Template path is not a file: {template_path}")
+    tpl = template_path.read_text(encoding="utf-8")
+
+    if match_dates:
+        returns = returns.dropna()
+    returns = _get_utils()._prepare_returns(returns)
+
+    strategy_title = kwargs.get("strategy_title", "Strategy")
+    if (
+        isinstance(returns, _pd.DataFrame)
+        and len(returns.columns) > 1
+        and isinstance(strategy_title, str)
+    ):
+        strategy_title = list(returns.columns)
+
+    benchmark_original = None
+    if benchmark is not None:
+        benchmark_title = kwargs.get("benchmark_title")
+        if benchmark_title is None:
+            if isinstance(benchmark, str):
+                benchmark_title = benchmark
+            elif isinstance(benchmark, _pd.Series):
+                benchmark_title = benchmark.name if benchmark.name else "Benchmark"
+            elif isinstance(benchmark, _pd.DataFrame):
+                col_name = benchmark[benchmark.columns[0]].name
+                benchmark_title = col_name if col_name else "Benchmark"
+        if benchmark_title is None:
+            benchmark_title = "Benchmark"
+
+        if isinstance(benchmark, str):
+            benchmark_original = _get_utils().download_returns(benchmark)
+            if rf != 0:
+                benchmark_original = _get_utils().to_excess_returns(
+                    benchmark_original, rf, nperiods=periods_per_year
+                )
+        elif isinstance(benchmark, _pd.Series):
+            benchmark_original = benchmark.copy()
+        else:
+            benchmark_original = benchmark
+
+        benchmark = _get_utils()._prepare_benchmark(benchmark, returns.index, rf)
+        if match_dates is True:
+            returns, benchmark = _match_dates(returns, benchmark)
+    else:
+        benchmark_title = None
+
+    # Header substitutions
+    date_range = returns.index.strftime("%e %b, %Y")
+    full_title = f"{title} (Compounded)" if compounded else title
+
+    params_parts = []
+    user_params = kwargs.get("parameters", {})
+    if user_params:
+        for key, value in user_params.items():
+            params_parts.append(f"{key}: {value}")
+    if benchmark_title:
+        params_parts.append(f"Benchmark: {benchmark_title.upper()}")
+    params_parts.append(f"Periods/Year: {periods_per_year}")
+    params_parts.append(f"RF: {rf:.1%}")
+    params_str = " &bull; ".join(params_parts)
+    if params_str:
+        params_str += " | "
+
+    matched_dates_str = (
+        " (matched dates)" if match_dates and benchmark is not None else ""
+    )
+
+    if benchmark is not None:
+        benchmark.name = benchmark_title
+    if isinstance(returns, _pd.Series):
+        returns.name = strategy_title
+    elif isinstance(returns, _pd.DataFrame):
+        returns.columns = (
+            strategy_title if isinstance(strategy_title, list) else [strategy_title]
+        )
+
+    # Metrics table (full set minus the simple drop list)
+    metrics_html = sections.metrics_table(
+        returns,
+        benchmark=benchmark,
+        rf=rf,
+        compounded=compounded,
+        periods_per_year=periods_per_year,
+        drop_rows=_SIMPLE_DROP_METRICS,
+        collapse_separators=True,
+        style_separators=True,
+        strategy_title=strategy_title,
+        benchmark_title=benchmark_title,
+        prepare_returns=False,
+    )
+
+    # EOY table
+    eoy_html = sections.eoy_table(
+        returns,
+        benchmark=benchmark,
+        benchmark_original=benchmark_original,
+        compounded=compounded,
+        strategy_title=strategy_title,
+        benchmark_title=benchmark_title,
+    )
+    eoy_title = (
+        "<h3>EOY Returns vs Benchmark</h3>"
+        if benchmark is not None
+        else "<h3>EOY Returns</h3>"
+    )
+
+    # Worst 5 drawdowns table
+    if isinstance(returns, _pd.Series):
+        dd_info_html = sections.dd_table(returns, top=5)
+    else:
+        parts = []
+        for col in returns.columns:
+            parts.append(f"<h3>{col}</h3><br>" + sections.dd_table(returns[col], top=5))
+        dd_info_html = "".join(parts)
+
+    fragments = {
+        "title": full_title,
+        "date_range": date_range[0] + " - " + date_range[-1],
+        "matched_dates": matched_dates_str,
+        "params": params_str,
+        "v": __version__,
+        "generated_at": _dt.now().strftime("%d %b, %Y %H:%M").lstrip("0"),
+        "metrics": metrics_html,
+        "eoy_title": eoy_title,
+        "eoy_table": eoy_html,
+        "dd_info": dd_info_html,
+    }
+
+    # Charts kept in the simple report
+    fragments["returns"] = sections.plot_section(
+        "returns", returns, benchmark=benchmark, figfmt=figfmt,
+        grayscale=grayscale, figsize=(8, 5), subtitle=False, ylabel="",
+        compound=compounded, prepare_returns=False,
+    )
+    fragments["log_returns"] = sections.plot_section(
+        "log_returns", returns, benchmark=benchmark, figfmt=figfmt,
+        grayscale=grayscale, figsize=(8, 4), subtitle=False, ylabel="",
+        compound=compounded, prepare_returns=False,
+    )
+    if benchmark is not None:
+        fragments["vol_returns"] = sections.plot_section(
+            "returns", returns, benchmark=benchmark, figfmt=figfmt,
+            match_volatility=True, grayscale=grayscale, figsize=(8, 4),
+            subtitle=False, ylabel="", compound=compounded, prepare_returns=False,
+        )
+    fragments["eoy_returns"] = sections.plot_section(
+        "yearly_returns", returns, benchmark=benchmark, figfmt=figfmt,
+        grayscale=grayscale, figsize=(8, 4), subtitle=False, ylabel="",
+        compounded=compounded, prepare_returns=False,
+    )
+    fragments["daily_dist"] = sections.plot_section(
+        "histogram", returns, benchmark=benchmark, figfmt=figfmt,
+        resample="D", grayscale=grayscale, figsize=(7, 4), subtitle=False,
+        ylabel="", compounded=compounded, xlim_quantile=0.01, adaptive_bins=80,
+        prepare_returns=False,
+    )
+    fragments["rolling_vol"] = sections.plot_section(
+        "rolling_volatility", returns, benchmark=benchmark, figfmt=figfmt,
+        grayscale=grayscale, figsize=(8, 3), subtitle=False, ylabel="",
+        period=win_half_year, periods_per_year=win_year,
+    )
+    if isinstance(returns, _pd.Series):
+        fragments["dd_periods"] = sections.plot_section(
+            "drawdowns_periods", returns, benchmark=None, figfmt=figfmt,
+            grayscale=grayscale, figsize=(8, 4), subtitle=False,
+            title=returns.name, ylabel="", compounded=compounded,
+            prepare_returns=False,
+        )
+    fragments["dd_plot"] = sections.plot_section(
+        "drawdown", returns, benchmark=None, figfmt=figfmt,
+        grayscale=grayscale, figsize=(8, 3), subtitle=False, ylabel="",
+    )
+
+    rendered = engine.render_report(tpl, fragments)
+
+    if output is None:
+        if _get_utils()._in_notebook():
+            _download_html(rendered, download_filename)
+        else:
+            with tempfile.NamedTemporaryFile(
+                mode="w", suffix=".html", delete=False, encoding="utf-8"
+            ) as f:
+                f.write(rendered)
+                temp_path = f.name
+            webbrowser.open("file://" + temp_path)
+        return
+
+    with open(output, "w", encoding="utf-8") as f:
+        f.write(rendered)
+
+
+# Cross-model comparison columns: (summary_key, display_label, is_percent, highlight_risk)
+_MC_TABLE_COLUMNS = [
+    ("cagr_p5", "CAGR p5", True, True),
+    ("cagr_median", "CAGR Median", True, False),
+    ("cagr_p95", "CAGR p95", True, False),
+    ("maxdd_median", "MaxDD Median", True, False),
+    ("maxdd_p95", "MaxDD p95", True, True),
+    ("terminal_median", "Terminal Median", True, False),
+    ("prob_loss", "P(Loss)", True, True),
+    ("cvar_5", "CVaR 5%", True, True),
+    ("bust_prob", "P(Bust)", True, True),
+    ("goal_prob", "P(Goal)", True, False),
+]
+
+_MC_KPI_METRICS = [
+    ("cagr_p5", "CAGR p5", True),
+    ("maxdd_p95", "MaxDD p95", True),
+    ("prob_loss", "P(Loss)", True),
+    ("cvar_5", "CVaR 5%", True),
+    ("bust_prob", "P(Bust)", True),
+]
+
+
+def _mc_format_value(key: str, val: float, is_pct: bool) -> str:
+    if is_pct:
+        return f"{val * 100:,.1f}%"
+    return f"{val:,.2f}"
+
+
+def _mc_build_rows(results, columns):
+    """Build formatted comparison rows keyed by model label."""
+    rows = {}
+    for res in results.values():
+        summary = res.summary
+        row = {}
+        for key, label, is_pct, _ in columns:
+            if key not in summary:
+                continue
+            row[label] = _mc_format_value(key, summary[key], is_pct)
+        rows[res.label] = row
+    return rows
+
+
+def _mc_comparison_html(rows, columns):
+    """Render comparison table with risk-quantile columns highlighted."""
+    risk_labels = {label for _, label, _, risk in columns if risk}
+    active_cols = [
+        (label, risk)
+        for _, label, _, risk in columns
+        if any(label in row for row in rows.values())
+    ]
+    parts = [
+        "<table><thead><tr><th>Model</th>",
+        *[f"<th>{label}</th>" for label, _ in active_cols],
+        "</tr></thead><tbody>",
+    ]
+    for model, row in rows.items():
+        parts.append(f"<tr><td>{model}</td>")
+        for label, risk in active_cols:
+            val = row.get(label, "—")
+            cls = ' class="risk"' if risk and label in risk_labels else ""
+            parts.append(f"<td{cls}>{val}</td>")
+        parts.append("</tr>")
+    parts.append("</tbody></table>")
+    return "".join(parts)
+
+
+def _mc_kpi_status(key: str, val: float, max_acceptable_dd: float, bust_tolerance: float):
+    if key == "cagr_p5":
+        if val <= 0:
+            return "fail"
+        if val < 0.02:
+            return "warn"
+        return "pass"
+    if key == "maxdd_p95":
+        if val < max_acceptable_dd:
+            return "fail"
+        if val < max_acceptable_dd * 1.1:
+            return "warn"
+        return "pass"
+    if key == "prob_loss":
+        if val >= 0.5:
+            return "fail"
+        if val >= 0.3:
+            return "warn"
+        return "pass"
+    if key == "bust_prob":
+        if val > bust_tolerance:
+            return "fail"
+        if val > bust_tolerance * 0.5:
+            return "warn"
+        return "pass"
+    if key == "cvar_5":
+        if val < -0.3:
+            return "fail"
+        if val < -0.1:
+            return "warn"
+        return "pass"
+    return "pass"
+
+
+def _mc_assessment_html(
+    envelope,
+    verdict,
+    checks,
+    max_acceptable_dd,
+    bust_tolerance,
+):
+    """Build KPI cards and verdict block for the assessment section."""
+    parts = ['<div class="kpi-row">']
+    for key, label, is_pct in _MC_KPI_METRICS:
+        if key not in envelope:
+            continue
+        val = envelope[key]
+        status = _mc_kpi_status(key, val, max_acceptable_dd, bust_tolerance)
+        display = _mc_format_value(key, val, is_pct)
+        parts.append(
+            f'<div class="kpi {status}"><div class="label">{label}</div>'
+            f'<div class="value">{display}</div></div>'
+        )
+    parts.append("</div>")
+
+    verdict_cls = verdict.lower()
+    parts.append(f'<div class="verdict {verdict_cls}">Verdict: {verdict}')
+    if checks:
+        parts.append("<ul>")
+        for _level, msg in checks:
+            parts.append(f"<li>{msg}</li>")
+        parts.append("</ul>")
+    parts.append("</div>")
+    return "".join(parts)
+
+
+def html_montecarlo(
+    returns,
+    models=None,
+    horizon=None,
+    sims=1000,
+    bust=None,
+    goal=None,
+    seed=None,
+    rf=0.0,
+    title="Monte Carlo Tearsheet",
+    output=None,
+    periods_per_year=252,
+    download_filename="quantstats-montecarlo.html",
+    figfmt="svg",
+    template_path=None,
+    confidence_level=0.95,
+    drift="historical",
+    match_dates=True,
+    max_acceptable_dd=-0.30,
+    bust_tolerance=0.05,
+    **kwargs,
+):
+    """
+    Generate a multi-model Monte Carlo HTML tearsheet for a single asset.
+
+    Characterises the asset with several models (GBM, jump-diffusion, GARCH,
+    Heston, bootstraps, Bayesian, ...) and simulates forward paths from each,
+    producing a cross-model comparison table plus per-model fan charts and
+    terminal-return distributions.
+
+    Parameters
+    ----------
+    returns : pd.Series or pd.DataFrame
+        Daily simple returns of a single asset. A DataFrame uses its first
+        column.
+    models : list[str], optional
+        Subset of model names to run. Defaults to all registered models.
+    horizon : int, optional
+        Periods per simulated path. Defaults to the length of the history.
+    sims : int, default 1000
+        Number of simulated paths per model.
+    bust : float, optional
+        Drawdown threshold for bust probability (e.g. ``-0.25``).
+    goal : float, optional
+        Terminal-return threshold for goal probability (e.g. ``0.5``).
+    seed : int, optional
+        Base random seed for reproducibility.
+    title : str, default "Monte Carlo Tearsheet"
+        Report title.
+    output : str or None, default None
+        Output file path. If None, opens in browser / downloads in notebook.
+    periods_per_year : int, default 252
+        Periods per year for annualisation.
+    figfmt : str, default "svg"
+        Embedded figure format.
+    confidence_level : float, default 0.95
+        Confidence band level for the fan charts.
+    drift : {"historical", "zero", "rf"}, default "historical"
+        Drift handling before calibration (see ``montecarlo.run_models``).
+    max_acceptable_dd : float, default -0.30
+        Drawdown tolerance for the strategy assessment (MaxDD p95 sizing limit).
+    bust_tolerance : float, default 0.05
+        Maximum acceptable P(bust) when ``bust`` is set.
+    """
+    import matplotlib.pyplot as _plt
+
+    from . import montecarlo as _mc
+    from ._reporting import engine
+    from .montecarlo import analytics as _mca
+    from .montecarlo import plotting as _mcplt
+
+    if match_dates and hasattr(returns, "dropna"):
+        returns = returns.dropna()
+    returns = _get_utils()._prepare_returns(returns)
+    if isinstance(returns, _pd.DataFrame):
+        returns = returns.iloc[:, 0]
+
+    asset_title = kwargs.get("strategy_title")
+    if asset_title is None:
+        asset_title = returns.name if returns.name else "Asset"
+
+    if template_path is None:
+        template_path = Path(__file__).parent / "report_montecarlo.html"
+    else:
+        template_path = Path(template_path)
+    template_path = template_path.resolve()
+    if not template_path.exists():
+        raise FileNotFoundError(f"Template file not found: {template_path}")
+    tpl = template_path.read_text(encoding="utf-8")
+
+    results = _mc.run_models(
+        returns,
+        models=models,
+        horizon=horizon,
+        sims=sims,
+        bust=bust,
+        goal=goal,
+        seed=seed,
+        periods=periods_per_year,
+        drift=drift,
+        rf=rf,
+    )
+
+    mc_results = {k: v for k, v in results.items() if v.category == "montecarlo"}
+    stress_results = {k: v for k, v in results.items() if v.category == "stress"}
+    mc_list = list(mc_results.values())
+
+    envelope = _mca.conservative_envelope(results)
+    verdict, checks = _mca.evaluate_strategy(
+        envelope,
+        max_acceptable_dd=max_acceptable_dd,
+        bust=bust,
+        bust_tolerance=bust_tolerance,
+    )
+    assessment_html = _mc_assessment_html(
+        envelope, verdict, checks, max_acceptable_dd, bust_tolerance
+    )
+
+    mc_rows = _mc_build_rows(mc_results, _MC_TABLE_COLUMNS)
+    comparison_html = _mc_comparison_html(mc_rows, _MC_TABLE_COLUMNS)
+
+    if stress_results:
+        stress_rows = _mc_build_rows(stress_results, _MC_TABLE_COLUMNS)
+        stress_html = _mc_comparison_html(stress_rows, _MC_TABLE_COLUMNS)
+    else:
+        stress_html = '<p class="note">No stress-test models in this run.</p>'
+
+    used_horizon = next(iter(results.values())).horizon if results else 0
+    model_names = list(results.keys())
+
+    def _embed(fig):
+        figfile = _get_utils()._file_stream()
+        fig.savefig(figfile, format=figfmt, bbox_inches="tight")
+        _plt.close(fig)
+        return _embed_figure(figfile, figfmt)
+
+    overlay_fig = _mcplt.overlay_fan_figure(mc_list, level=confidence_level)
+    maxdd_fig = _mcplt.maxdd_distribution_figure(
+        mc_list, max_acceptable_dd=max_acceptable_dd
+    )
+    cagr_fig = _mcplt.cagr_quantiles_figure(mc_list)
+
+    fan_parts = []
+    hist_parts = []
+    for res in results.values():
+        fan_fig = _mcplt.fan_chart_figure(
+            res, level=confidence_level, title=res.label
+        )
+        fan_parts.append(f'<div class="cell">{_embed(fan_fig)}</div>')
+        hist_fig = _mcplt.terminal_hist_figure(res, title=res.label)
+        hist_parts.append(f'<div class="cell">{_embed(hist_fig)}</div>')
+
+    date_range = returns.index.strftime("%e %b, %Y")
+    params_parts = []
+    if bust is not None:
+        params_parts.append(f"Bust: {bust:.0%}")
+    if goal is not None:
+        params_parts.append(f"Goal: {goal:.0%}")
+    params_parts.append(f"Horizon: {used_horizon}")
+    params_parts.append(f"Sims: {sims}")
+    params_parts.append(f"Asset: {str(asset_title).upper()}")
+    if drift != "historical":
+        params_parts.append(f"Drift: {drift} (stress scenario)")
+    params_str = " &bull; ".join(params_parts)
+    if params_str:
+        params_str += " | "
+
+    seed_str = str(seed) if seed is not None else "random"
+    assumptions = (
+        f"Assumptions: {sims:,} simulations per model &bull; seed {seed_str} "
+        f"&bull; horizon {used_horizon} periods &bull; drift={drift} "
+        f"&bull; models: {', '.join(model_names)} &bull; "
+        f"sizing limit MaxDD p95 = {max_acceptable_dd:.0%}"
+    )
+    if bust is not None:
+        assumptions += f" &bull; P(bust) tolerance = {bust_tolerance:.0%}"
+
+    fragments = {
+        "title": title,
+        "date_range": date_range[0] + " - " + date_range[-1],
+        "params": params_str,
+        "v": __version__,
+        "generated_at": _dt.now().strftime("%d %b, %Y %H:%M").lstrip("0"),
+        "assessment": assessment_html,
+        "comparison_table": comparison_html,
+        "overlay_fan": _embed(overlay_fig),
+        "maxdd_dist": _embed(maxdd_fig),
+        "cagr_quantiles": _embed(cagr_fig),
+        "stress_section": stress_html,
+        "fan_charts": "\n".join(fan_parts),
+        "terminal_hists": "\n".join(hist_parts),
+        "assumptions": assumptions,
+    }
+    rendered = engine.render_report(tpl, fragments)
+
+    if output is None:
+        if _get_utils()._in_notebook():
+            _download_html(rendered, download_filename)
+        else:
+            with tempfile.NamedTemporaryFile(
+                mode="w", suffix=".html", delete=False, encoding="utf-8"
+            ) as f:
+                f.write(rendered)
+                temp_path = f.name
+            webbrowser.open("file://" + temp_path)
+        return
+
+    with open(output, "w", encoding="utf-8") as f:
+        f.write(rendered)
+
+
+def _ad_status_counts_html(result):
+    counts = {"excellent": 0, "good": 0, "warning": 0, "critical": 0}
+    for mr in result.metrics:
+        for wr in mr.windows.values():
+            counts[wr.status] += 1
+    parts = ['<div class="kpi-row">']
+    for key, label in (
+        ("excellent", "Excellent"),
+        ("good", "Good"),
+        ("warning", "Warning"),
+        ("critical", "Critical"),
+    ):
+        parts.append(
+            f'<div class="kpi {key}"><div class="label">{label}</div>'
+            f'<div class="value">{counts[key]}</div></div>'
+        )
+    parts.append("</div>")
+    return "".join(parts)
+
+
+def _ad_summary_table_html(result):
+    from .alphadecay.core import status_label
+
+    windows = result.windows
+    parts = [
+        "<table><thead><tr><th>Metric</th>",
+        *[f"<th>{w}d</th>" for w in windows],
+        "</tr></thead><tbody>",
+    ]
+    for mr in result.metrics:
+        parts.append(f"<tr><td>{mr.spec.label}</td>")
+        for w in windows:
+            wr = mr.windows[w]
+            lbl = status_label(wr.status)
+            z_txt = f"z={wr.z_score:+.2f}" if not _np.isnan(wr.z_score) else ""
+            parts.append(
+                f'<td><span class="badge {wr.status}">{lbl}</span>'
+                f'<br><span class="metric-meta">{z_txt}</span></td>'
+            )
+        parts.append("</tr>")
+    parts.append("</tbody></table>")
+    return "".join(parts)
+
+
+def _ad_metric_rows_html(result, embed_fn):
+    from .alphadecay import plotting as _adplt
+    from .alphadecay.core import format_value, status_label
+
+    parts = []
+    for mr in result.metrics:
+        parts.append(f'<div class="metric-row" id="metric_{mr.spec.key}">')
+        parts.append(f"<h4>{mr.spec.label}</h4>")
+        parts.append('<div class="grid">')
+        for w in result.windows:
+            wr = mr.windows[w]
+            fig = _adplt.metric_distribution_figure(wr, mr.spec, title=f"{mr.spec.label} — {w}d")
+            meta = (
+                f"Obs: {format_value(mr.spec, wr.observed)} &bull; "
+                f"Mean: {format_value(mr.spec, wr.mean)} &bull; "
+                f"z={wr.z_score:+.2f} &bull; "
+                f"P={wr.percentile:.0f}% &bull; "
+                f'<span class="badge {wr.status}">{status_label(wr.status)}</span>'
+            )
+            parts.append(
+                f'<div class="cell"><div class="metric-meta">{meta}</div>'
+                f"{embed_fn(fig)}</div>"
+            )
+        parts.append("</div></div>")
+    return "\n".join(parts)
+
+
+def _ad_sota_stats_html(result):
+    from .alphadecay.core import status_label
+
+    cusum = result.cusum
+    tuw = result.time_underwater
+    alarm = "ALARM" if cusum.alarm else "Normal"
+    uw = (
+        f"{tuw.current_days} days underwater"
+        if tuw.is_underwater
+        else "At equity peak"
+    )
+    return (
+        '<table><thead><tr><th>Diagnostic</th><th>Current</th><th>Reference</th>'
+        "<th>Status</th></tr></thead><tbody>"
+        f"<tr><td>CUSUM</td><td>{cusum.current:.4f}</td>"
+        f"<td>Threshold {cusum.threshold:.4f} ({cusum.pct_of_threshold:.0%})</td>"
+        f"<td>{alarm}</td></tr>"
+        f"<tr><td>Time Underwater</td><td>{uw}</td>"
+        f"<td>Mean duration {tuw.mean:.0f}d (z={tuw.z_score:+.2f})</td>"
+        f'<td><span class="badge {tuw.status}">{status_label(tuw.status)}</span></td></tr>'
+        "</tbody></table>"
+    )
+
+
+def html_alpha_decay(
+    returns,
+    windows=(7, 15, 30),
+    rf=0.0,
+    title="Alpha Decay Tearsheet",
+    output=None,
+    periods_per_year=252,
+    download_filename="quantstats-alpha-decay.html",
+    figfmt="svg",
+    template_path=None,
+    match_dates=True,
+    cusum_k=0.5,
+    cusum_h=4.0,
+    **kwargs,
+):
+    """
+    Generate an alpha-decay HTML tearsheet for a single asset.
+
+    Computes rolling risk metrics over short windows (7/15/30 days by default),
+    compares the latest observation against the historical distribution of each
+    metric (z-score traffic light), and adds CUSUM + time-underwater diagnostics.
+
+    Parameters
+    ----------
+    returns : pd.Series or pd.DataFrame
+        Daily simple returns of a single asset. A DataFrame uses its first column.
+    windows : tuple[int], default (7, 15, 30)
+        Rolling window sizes in trading days.
+    rf : float, default 0.0
+        Annual risk-free rate for CAGR.
+    title : str, default "Alpha Decay Tearsheet"
+        Report title.
+    output : str or None, default None
+        Output file path. If None, opens in browser / downloads in notebook.
+    periods_per_year : int, default 252
+        Periods per year for annualisation.
+    figfmt : str, default "svg"
+        Embedded figure format.
+    cusum_k : float, default 0.5
+        CUSUM slack parameter in units of return standard deviation.
+    cusum_h : float, default 4.0
+        CUSUM alarm threshold in units of return standard deviation.
+    """
+    import matplotlib.pyplot as _plt
+
+    from . import alphadecay as _ad
+    from ._reporting import engine
+    from .alphadecay import plotting as _adplt
+
+    if match_dates and hasattr(returns, "dropna"):
+        returns = returns.dropna()
+    returns = _get_utils()._prepare_returns(returns)
+    if isinstance(returns, _pd.DataFrame):
+        returns = returns.iloc[:, 0]
+
+    asset_title = kwargs.get("strategy_title")
+    if asset_title is None:
+        asset_title = returns.name if returns.name else "Asset"
+
+    if template_path is None:
+        template_path = Path(__file__).parent / "report_alpha_decay.html"
+    else:
+        template_path = Path(template_path)
+    template_path = template_path.resolve()
+    if not template_path.exists():
+        raise FileNotFoundError(f"Template file not found: {template_path}")
+    tpl = template_path.read_text(encoding="utf-8")
+
+    result = _ad.analyze(
+        returns,
+        windows=tuple(windows),
+        rf=rf,
+        periods=periods_per_year,
+        cusum_k=cusum_k,
+        cusum_h=cusum_h,
+        asset_label=str(asset_title),
+    )
+
+    def _embed(fig):
+        figfile = _get_utils()._file_stream()
+        fig.savefig(figfile, format=figfmt, bbox_inches="tight")
+        _plt.close(fig)
+        return _embed_figure(figfile, figfmt)
+
+    cusum_fig = _adplt.cusum_figure(result.cusum)
+    tuw_fig = _adplt.time_underwater_figure(result.time_underwater)
+
+    date_range = returns.index.strftime("%e %b, %Y")
+    windows_label = "/".join(str(w) for w in windows)
+    params_parts = [
+        f"Windows: {windows_label}d",
+        f"Asset: {str(asset_title).upper()}",
+        f"Metrics: {len(result.metrics)}",
+    ]
+    params_str = " &bull; ".join(params_parts) + " | "
+
+    score_html = (
+        '<div class="score-box">'
+        f'<div class="score">{result.score}/{result.total}</div>'
+        f'<div class="sub">Health score — metric-window cells rated Good or Excellent '
+        f"({result.score_pct:.0f}%)</div></div>"
+    )
+
+    assumptions = (
+        f"Assumptions: windows {windows_label}d &bull; "
+        f"{len(result.metrics)} metrics &bull; "
+        f"CUSUM k={cusum_k}σ h={cusum_h}σ &bull; "
+        f"periods/year={periods_per_year} &bull; rf={rf:.2%}"
+    )
+
+    fragments = {
+        "title": title,
+        "date_range": date_range[0] + " - " + date_range[-1],
+        "params": params_str,
+        "v": __version__,
+        "generated_at": _dt.now().strftime("%d %b, %Y %H:%M").lstrip("0"),
+        "windows_label": windows_label,
+        "score_summary": score_html,
+        "status_counts": _ad_status_counts_html(result),
+        "summary_table": _ad_summary_table_html(result),
+        "metric_rows": _ad_metric_rows_html(result, _embed),
+        "cusum_chart": _embed(cusum_fig),
+        "time_underwater": _embed(tuw_fig),
+        "sota_stats": _ad_sota_stats_html(result),
+        "assumptions": assumptions,
+    }
+    rendered = engine.render_report(tpl, fragments)
+
+    if output is None:
+        if _get_utils()._in_notebook():
+            _download_html(rendered, download_filename)
+        else:
+            with tempfile.NamedTemporaryFile(
+                mode="w", suffix=".html", delete=False, encoding="utf-8"
+            ) as f:
+                f.write(rendered)
+                temp_path = f.name
+            webbrowser.open("file://" + temp_path)
+        return
+
+    with open(output, "w", encoding="utf-8") as f:
+        f.write(rendered)
 
 
 def full(
@@ -2292,7 +3128,11 @@ def _calc_dd(df, display=True, as_pct=False):
             for col in ret_dd.columns.get_level_values(0)
         }
     else:
-        # Single strategy case
+        # Single strategy case. A single-column DataFrame input arrives here
+        # with MultiIndex columns (level 0 = the strategy column); flatten it
+        # so the per-field access below works on flat column labels.
+        if isinstance(ret_dd.columns, _pd.MultiIndex):
+            ret_dd = ret_dd.droplevel(0, axis=1)
         max_dd = ret_dd.sort_values(by="max drawdown", ascending=True)
         dd_stats = {
             "returns": {

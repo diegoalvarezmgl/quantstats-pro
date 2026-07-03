@@ -129,14 +129,23 @@ def _generate_cache_key(data, rf, nperiods):
         Cache key string or None if hashing fails
     """
     try:
-        # Create a hash from the data
-        if isinstance(data, (_pd.Series, _pd.DataFrame)):
+        # Create a hash from the data. The type and column layout must be part
+        # of the key: a Series and a single-column DataFrame holding identical
+        # values produce the same row hashes, so without this they would share
+        # a cache entry and return the wrong type (bug: stat fns receiving a
+        # Series would get a DataFrame back).
+        if isinstance(data, _pd.Series):
             data_hash = _pd.util.hash_pandas_object(data).sum()
+            kind = f"series[{data.name}]"
+        elif isinstance(data, _pd.DataFrame):
+            data_hash = _pd.util.hash_pandas_object(data).sum()
+            kind = f"frame{tuple(data.columns)}"
         else:
             data_hash = hash(str(data))
+            kind = "other"
 
-        # Include parameters in the key
-        key = f"{data_hash}_{rf}_{nperiods}"
+        # Include type/columns and parameters in the key
+        key = f"{kind}_{data_hash}_{rf}_{nperiods}"
         return key
     except (ValueError, TypeError, AttributeError, MemoryError):
         # If hashing fails, return None to skip caching

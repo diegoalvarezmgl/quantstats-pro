@@ -30,6 +30,69 @@ def sample_benchmark():
     return returns
 
 
+class TestHistogramXlim:
+    """The daily histogram can clip its x-axis to inner quantiles."""
+
+    @pytest.fixture
+    def fat_tailed(self):
+        np.random.seed(0)
+        dates = pd.date_range("2018-01-01", periods=1000, freq="D")
+        vals = np.random.randn(1000) * 0.01
+        vals[0] = 0.25  # extreme outlier that would stretch the x-axis
+        vals[1] = -0.30
+        return pd.Series(vals, index=dates, name="Asset")
+
+    def test_quantile_clip_tightens_xaxis(self, fat_tailed):
+        wide = plots.histogram(fat_tailed, resample="D", show=False)
+        narrow = plots.histogram(
+            fat_tailed, resample="D", xlim_quantile=0.01, show=False
+        )
+        wide_span = np.subtract(*reversed(wide.axes[0].get_xlim()))
+        narrow_span = np.subtract(*reversed(narrow.axes[0].get_xlim()))
+        assert narrow_span < wide_span
+
+    def test_adaptive_bins_spreads_across_visible_range(self, fat_tailed):
+        fig = plots.histogram(
+            fat_tailed,
+            resample="D",
+            xlim_quantile=0.01,
+            adaptive_bins=60,
+            show=False,
+        )
+        ax = fig.axes[0]
+        xlim = ax.get_xlim()
+        visible = []
+        for cont in ax.containers:
+            for patch in cont.patches:
+                cx = patch.get_x() + patch.get_width() / 2
+                if xlim[0] <= cx <= xlim[1] and patch.get_height() > 0:
+                    visible.append(patch.get_width())
+        assert len(visible) >= 40
+        widths = {round(w, 8) for w in visible}
+        assert len(widths) == 1
+        expected_w = (xlim[1] - xlim[0]) / 60
+        assert visible[0] == pytest.approx(expected_w, rel=0.05)
+
+    def test_daily_resample_does_not_fabricate_weekend_zeros(self):
+        """Calendar resample must not pile comp([])==0 into the centre bin."""
+        np.random.seed(1)
+        dates = pd.bdate_range("2018-01-01", periods=500)
+        returns = pd.Series(np.random.randn(500) * 0.01, index=dates, name="Asset")
+        fig = plots.histogram(
+            returns,
+            resample="D",
+            xlim_quantile=0.01,
+            adaptive_bins=40,
+            show=False,
+            prepare_returns=False,
+        )
+        heights = sorted(
+            (p.get_height() for c in fig.axes[0].containers for p in c.patches),
+            reverse=True,
+        )
+        assert heights[0] < heights[1] * 2.5
+
+
 class TestPlotFunctions:
     """Test that plot functions run without errors."""
 

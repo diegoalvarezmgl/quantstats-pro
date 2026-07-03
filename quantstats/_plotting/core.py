@@ -247,10 +247,7 @@ def plot_returns_bars(
     # Add subtitle with date range if enabled
     if subtitle:
         ax.set_title(
-            "{} - {}           \n".format(
-                df.index[0],
-                df.index[-1],
-            ),
+            f"{df.index[0]} - {df.index[-1]}           \n",
             fontsize=12,
             color="gray",
         )
@@ -580,6 +577,69 @@ def plot_timeseries(
     return None
 
 
+def _pooled_returns_array(returns, benchmark) -> _np.ndarray:
+    """Concatenate finite return observations from strategy and benchmark."""
+    chunks = []
+    for series in (returns, benchmark):
+        if series is None:
+            continue
+        arr = _np.asarray(series).ravel()
+        arr = arr[_np.isfinite(arr)]
+        if arr.size:
+            chunks.append(arr)
+    return _np.concatenate(chunks) if chunks else _np.array([])
+
+
+def _histogram_visible_range(pooled: _np.ndarray, xlim_quantile: float | None):
+    """Return (lo, hi) for the histogram view, with light padding."""
+    if pooled.size == 0:
+        return None
+    if xlim_quantile:
+        q = float(xlim_quantile)
+        lo = _np.quantile(pooled, q)
+        hi = _np.quantile(pooled, 1.0 - q)
+    else:
+        lo = float(_np.min(pooled))
+        hi = float(_np.max(pooled))
+    if not (_np.isfinite(lo) and _np.isfinite(hi) and hi > lo):
+        return None
+    pad = 0.05 * (hi - lo)
+    return lo - pad, hi + pad
+
+
+def _resolve_histogram_bins(
+    pooled: _np.ndarray,
+    xlim_quantile: float | None,
+    binwidth: float | None,
+    adaptive_bins: int | None,
+    bins: int,
+):
+    """
+    Choose histogram bin kwargs and optional x-axis limits.
+
+    When ``adaptive_bins`` is set, bin width is ``span / adaptive_bins`` over
+    the visible range (quantile-clipped when ``xlim_quantile`` is set). Using
+    ``binrange`` keeps every bar inside the plotted window instead of spreading
+    bins across the full historical min/max.
+    """
+    visible = _histogram_visible_range(pooled, xlim_quantile)
+    if visible is None:
+        return {"bins": bins}, None
+
+    lo, hi = visible
+    span = hi - lo
+
+    if adaptive_bins:
+        bw = span / int(adaptive_bins)
+        return {"binwidth": bw, "binrange": (lo, hi)}, (lo, hi)
+    if binwidth:
+        kw = {"binwidth": binwidth}
+        if xlim_quantile:
+            kw["binrange"] = (lo, hi)
+        return kw, (lo, hi) if xlim_quantile else None
+    return {"bins": bins}, (lo, hi) if xlim_quantile else None
+
+
 def plot_histogram(
     returns,
     benchmark,
@@ -593,6 +653,9 @@ def plot_histogram(
     ylabel=True,
     subtitle=True,
     compounded=True,
+    xlim_quantile=None,
+    binwidth=None,
+    adaptive_bins: int | None = None,
     savefig=None,
     show=True,
 ):
@@ -642,23 +705,40 @@ def plot_histogram(
 
     colors, _, _ = _get_colors(grayscale)
 
-    # Choose aggregation function based on compounded setting
-    apply_fnc = _get_stats().comp if compounded else _np.sum
+    # Daily histograms: input is already daily returns. Calendar-day resample
+    # with comp() turns empty weekend/holiday buckets into 0% returns
+    # (comp([]) == 0), which piles up in the centre bin.
+    if resample in ("D", "B"):
+        returns = returns.dropna()
+        if benchmark is not None:
+            benchmark = benchmark.dropna()
+    else:
+        # Choose aggregation function based on compounded setting
+        apply_fnc = _get_stats().comp if compounded else _np.sum
 
-    # Process benchmark data
-    if benchmark is not None:
-        benchmark = benchmark.fillna(0)
-        benchmark = safe_resample(benchmark, resample, apply_fnc)
-        benchmark = safe_resample(benchmark, resample, "last")
+        # Process benchmark data
+        if benchmark is not None:
+            benchmark = benchmark.fillna(0)
+            benchmark = safe_resample(benchmark, resample, apply_fnc)
+            benchmark = safe_resample(benchmark, resample, "last")
 
-    # Process returns data
-    returns = returns.fillna(0)
-    returns = safe_resample(returns, resample, apply_fnc)
-    returns = safe_resample(returns, resample, "last")
+        # Process returns data
+        returns = returns.fillna(0)
+        returns = safe_resample(returns, resample, apply_fnc)
+        returns = safe_resample(returns, resample, "last")
 
     # Adjust figure size slightly
     figsize = (0.995 * figsize[0], figsize[1])
     fig, ax = _plt.subplots(figsize=figsize)
+
+    # Convert single-column DataFrame to Series for easier handling
+    if isinstance(returns, _pd.DataFrame) and len(returns.columns) == 1:
+        returns = returns[returns.columns[0]]
+
+    pooled = _pooled_returns_array(returns, benchmark)
+    _bin_kw, xlim = _resolve_histogram_bins(
+        pooled, xlim_quantile, binwidth, adaptive_bins, bins
+    )
 
     # Configure axis appearance
     ax.spines["top"].set_visible(False)
@@ -685,10 +765,6 @@ def plot_histogram(
     # Set background colors
     fig.set_facecolor("white")
     ax.set_facecolor("white")
-
-    # Convert single-column DataFrame to Series for easier handling
-    if isinstance(returns, _pd.DataFrame) and len(returns.columns) == 1:
-        returns = returns[returns.columns[0]]
 
     # Set up color palette and alpha based on data structure
     pallete = colors[1:2] if benchmark is None else colors[:2]
@@ -723,7 +799,7 @@ def plot_histogram(
         _sns.histplot(
             data=combined_returns,
             x="Returns",
-            bins=bins,
+            **_bin_kw,
             alpha=alpha,
             kde=kde,
             stat="density",
@@ -741,7 +817,7 @@ def plot_histogram(
 
             _sns.histplot(
                 data=combined_returns,
-                bins=bins,
+                **_bin_kw,
                 alpha=alpha,
                 kde=False,
                 stat="density",
@@ -759,7 +835,7 @@ def plot_histogram(
             _sns.histplot(
                 data=combined_returns,
                 x="Returns",
-                bins=bins,
+                **_bin_kw,
                 alpha=alpha,
                 kde=kde,
                 stat="density",
@@ -779,10 +855,19 @@ def plot_histogram(
             color="red",
         )
 
-    # Format x-axis as percentage
-    ax.xaxis.set_major_formatter(
-        _plt.FuncFormatter(lambda x, loc: f"{int(x * 100):,}%")
-    )
+    # Format x-axis as percentage (finer ticks when the visible span is narrow)
+    span = xlim[1] - xlim[0] if xlim else None
+    if span is not None and span < 0.12:
+        ax.xaxis.set_major_formatter(
+            _plt.FuncFormatter(lambda x, loc: f"{x * 100:.1f}%")
+        )
+    else:
+        ax.xaxis.set_major_formatter(
+            _plt.FuncFormatter(lambda x, loc: f"{int(x * 100):,}%")
+        )
+
+    if xlim:
+        ax.set_xlim(xlim)
 
     # Removed static lines for clarity
     # ax.axhline(0.01, lw=1, color="#000000", zorder=2)
