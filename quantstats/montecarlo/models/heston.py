@@ -66,6 +66,17 @@ class Heston(SimulationModel):
         self._fitted = True
         return self
 
+    def calibration_summary(self, periods: float = 252.0) -> dict[str, str]:
+        ann_mu = self.mu_ * periods
+        ann_vol = float(np.sqrt(self.theta_) * np.sqrt(periods))
+        return {
+            "Drift (ann.)": f"{ann_mu:.2%}",
+            "Volatility (ann.)": f"{ann_vol:.2%}",
+            "Mean reversion kappa": f"{self.kappa_:.3f}",
+            "Vol-of-vol xi": f"{self.xi_:.4f}",
+            "Leverage rho": f"{self.rho_:.2f}",
+        }
+
     def simulate(
         self, horizon: int, sims: int, rng: np.random.Generator
     ) -> np.ndarray:
@@ -81,7 +92,8 @@ class Heston(SimulationModel):
         for t in range(horizon):
             v_pos = np.maximum(v, 0.0)
             sqrt_v = np.sqrt(v_pos)
-            log_paths[t] = self.mu_ - 0.5 * v_pos + sqrt_v * w_s[t]
+            # mu_ is the mean of log returns; do not subtract variance drag again.
+            log_paths[t] = self.mu_ + sqrt_v * w_s[t]
             v = (
                 v
                 + self.kappa_ * (self.theta_ - v_pos)

@@ -18,13 +18,14 @@ from . import (
     registry,
 )
 from .base import SimulationModel
-from .core import ModelResult, run_models
+from .core import ModelResult, infer_periods_per_year, run_models
 from .registry import available_models, get_model
 
 __all__ = [
     "SimulationModel",
     "ModelResult",
     "run_models",
+    "infer_periods_per_year",
     "get_model",
     "available_models",
     "analytics",

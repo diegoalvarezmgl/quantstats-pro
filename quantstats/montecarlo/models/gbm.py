@@ -28,6 +28,14 @@ class GBM(SimulationModel):
         self._fitted = True
         return self
 
+    def calibration_summary(self, periods: float = 252.0) -> dict[str, str]:
+        ann_mu = self.mu_ * periods
+        ann_sigma = self.sigma_ * np.sqrt(periods)
+        return {
+            "Drift (ann.)": f"{ann_mu:.2%}",
+            "Volatility (ann.)": f"{ann_sigma:.2%}",
+        }
+
     def simulate(
         self, horizon: int, sims: int, rng: np.random.Generator
     ) -> np.ndarray:

@@ -3,8 +3,7 @@ Trimmed bootstrap models.
 
 Removes the *best* returns from the sample before bootstrapping, producing a
 deliberately pessimistic view of outcomes (it strips the luckiest upside while
-keeping the downside intact). Two variants are registered: trimming the top 1%
-and the top 5% of returns.
+keeping the downside intact). Only the top 1% variant is registered by default.
 """
 
 from __future__ import annotations
@@ -26,7 +25,6 @@ class _TrimmedBase(SimulationModel):
             raise ValueError("Trimmed model needs at least one return.")
         cutoff = np.quantile(arr, 1.0 - self.trim_fraction)
         trimmed = arr[arr <= cutoff]
-        # Safety: never end up empty.
         self.returns_ = trimmed if trimmed.size > 0 else arr
         self._fitted = True
         return self
@@ -38,16 +36,15 @@ class _TrimmedBase(SimulationModel):
         idx = rng.integers(0, self.returns_.size, size=(horizon, sims))
         return self.returns_[idx]
 
+    def calibration_summary(self, periods: float = 252.0) -> dict[str, str]:
+        return {
+            "Trim fraction (top)": f"{self.trim_fraction:.1%}",
+            "Sample size (after trim)": f"{self.returns_.size:,}",
+        }
+
 
 @register
 class TrimmedTop1(_TrimmedBase):
     name = "trimmed_1pct"
     label = "Trimmed (top 1%)"
     trim_fraction = 0.01
-
-
-@register
-class TrimmedTop5(_TrimmedBase):
-    name = "trimmed_5pct"
-    label = "Trimmed (top 5%)"
-    trim_fraction = 0.05

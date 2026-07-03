@@ -4,15 +4,30 @@ Orchestration: calibrate and simulate multiple models, collect results.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import numpy as np
 import pandas as pd
 
 from . import analytics
+from .base import SimulationModel
 from .registry import available_models, get_model
 
 _DRIFT_MODES = ("historical", "zero", "rf")
+
+
+def infer_periods_per_year(returns: pd.Series) -> float:
+    """Infer trading days per year from the return index.
+
+    DatetimeIndex with >5% weekend observations → 365 (crypto / 24-7).
+    Otherwise → 252 (US equities).
+    """
+    idx = returns.index
+    if isinstance(idx, pd.DatetimeIndex) and len(idx) > 0:
+        weekend = idx.dayofweek >= 5
+        if float(weekend.mean()) > 0.05:
+            return 365.0
+    return 252.0
 
 
 def _apply_drift(
@@ -50,6 +65,7 @@ class ModelResult:
     periods: float = 252.0
     bust: float | None = None
     goal: float | None = None
+    fitted_model: SimulationModel | None = field(default=None, repr=False)
 
     @property
     def horizon(self) -> int:
@@ -71,6 +87,11 @@ class ModelResult:
     def fan_chart(self, level: float = 0.95):
         return analytics.fan_chart(self.sim_returns, level=level)
 
+    def calibration_summary(self) -> dict[str, str]:
+        if self.fitted_model is None:
+            return {}
+        return self.fitted_model.calibration_summary(periods=self.periods)
+
 
 def run_models(
     returns: pd.Series,
@@ -80,7 +101,7 @@ def run_models(
     bust: float | None = None,
     goal: float | None = None,
     seed: int | None = None,
-    periods: float = 252.0,
+    periods: float | None = None,
     drift: str = "historical",
     rf: float = 0.0,
 ) -> dict[str, ModelResult]:
@@ -94,8 +115,8 @@ def run_models(
     models : list[str], optional
         Model names to run. Defaults to all registered models.
     horizon : int, optional
-        Number of periods per path. Defaults to the length of the cleaned
-        return history.
+        Number of periods per path. Defaults to one year
+        (``periods_per_year`` trading days).
     sims : int, default 1000
         Number of simulated paths per model.
     bust : float, optional
@@ -105,8 +126,9 @@ def run_models(
     seed : int, optional
         Base seed; each model receives an independent child stream so results
         are reproducible yet not artificially correlated across models.
-    periods : float, default 252.0
-        Periods per year for annualisation.
+    periods : float, optional
+        Periods per year for annualisation. When ``None``, inferred from the
+        return index (252 for weekdays-only, 365 for 24/7 data).
     drift : {"historical", "zero", "rf"}, default "historical"
         How to treat the estimated drift before calibration. ``historical``
         keeps it; ``zero`` removes it to compare pure risk/structure; ``rf``
@@ -121,8 +143,10 @@ def run_models(
         order.
     """
     returns = pd.Series(returns).dropna()
+    if periods is None:
+        periods = infer_periods_per_year(returns)
     if horizon is None:
-        horizon = int(len(returns))
+        horizon = int(round(periods))
     if horizon <= 0:
         raise ValueError("horizon must be a positive integer")
 
@@ -146,5 +170,6 @@ def run_models(
             periods=periods,
             bust=bust,
             goal=goal,
+            fitted_model=model,
         )
     return results

@@ -57,6 +57,17 @@ class JumpDiffusion(SimulationModel):
         self._fitted = True
         return self
 
+    def calibration_summary(self, periods: float = 252.0) -> dict[str, str]:
+        ann_mu = self.mu_ * periods
+        ann_sigma = self.sigma_ * np.sqrt(periods)
+        ann_lambda = self.lambda_ * periods
+        return {
+            "Drift (ann.)": f"{ann_mu:.2%}",
+            "Diffusion vol (ann.)": f"{ann_sigma:.2%}",
+            "Jump intensity (ann.)": f"{ann_lambda:.2f}",
+            "Jump mean": f"{self.jump_mean_:.4f}",
+        }
+
     def simulate(
         self, horizon: int, sims: int, rng: np.random.Generator
     ) -> np.ndarray:

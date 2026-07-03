@@ -11,6 +11,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import numpy as np
+import pandas as pd
 
 if TYPE_CHECKING:
     from .core import ModelResult
@@ -82,6 +83,67 @@ def fan_chart(
     return median, lower, upper
 
 
+def historical_windows(returns: pd.Series, horizon: int) -> np.ndarray:
+    """All overlapping ``horizon``-length return windows from full history.
+
+    Returns an array of shape ``(horizon, n_windows)`` — the same layout as
+    ``sim_returns`` — so the empirical distribution of *realised* outcomes over
+    the entire history can be compared directly against simulated paths. If the
+    history is shorter than ``horizon``, a single truncated window is returned.
+    """
+    arr = pd.Series(returns).dropna().to_numpy(dtype=float)
+    if arr.size == 0:
+        return np.empty((0, 0), dtype=float)
+    if arr.size <= horizon:
+        return arr.reshape(-1, 1)
+    windows = np.lib.stride_tricks.sliding_window_view(arr, horizon)
+    return np.ascontiguousarray(windows.T)
+
+
+def historical_window(returns: pd.Series, horizon: int) -> np.ndarray:
+    """Trailing ``horizon`` simple returns from history (1-D)."""
+    arr = pd.Series(returns).dropna().to_numpy(dtype=float)
+    if arr.size == 0:
+        return np.array([], dtype=float)
+    return arr[-min(horizon, arr.size) :]
+
+
+def historical_cumulative(returns: pd.Series, horizon: int) -> np.ndarray:
+    """Cumulative return path of the trailing historical window."""
+    window = historical_window(returns, horizon)
+    if window.size == 0:
+        return np.array([], dtype=float)
+    return cumulative_paths(window.reshape(-1, 1))[:, 0]
+
+
+def historical_summary(
+    returns: pd.Series,
+    horizon: int,
+    periods: float = 252.0,
+    bust: float | None = None,
+    goal: float | None = None,
+) -> dict[str, float]:
+    """Empirical distribution of realised metrics over all rolling windows.
+
+    Uses every overlapping ``horizon``-length window of the full history, so
+    quantiles (CAGR p5/median/p95, MaxDD, CVaR, probabilities) describe what
+    actually happened across the whole sample — directly comparable with each
+    model's simulated distribution.
+    """
+    windows = historical_windows(returns, horizon)
+    if windows.size == 0:
+        return {}
+    return summarize(windows, periods=periods, bust=bust, goal=goal)
+
+
+def realism_percentile(sim_returns: np.ndarray, historical_terminal: float) -> float:
+    """Percentile rank of the historical terminal within simulated terminals."""
+    terminal = terminal_values(sim_returns)
+    if terminal.size == 0:
+        return float("nan")
+    return float(np.mean(terminal <= historical_terminal) * 100.0)
+
+
 def summarize(
     sim_returns: np.ndarray,
     periods: float = 252.0,
@@ -97,11 +159,12 @@ def summarize(
         "cagr_p5": float(np.quantile(cagr, 0.05)),
         "cagr_median": float(np.median(cagr)),
         "cagr_p95": float(np.quantile(cagr, 0.95)),
-        # 95th-percentile drawdown severity: exceeded by only ~5% of paths.
+        # 5th percentile of max drawdown: severity exceeded by ~5% of paths.
         "maxdd_median": float(np.median(mdd)),
         "maxdd_p95": float(np.quantile(mdd, 0.05)),
         "terminal_median": float(np.median(terminal)),
         "prob_loss": float(np.mean(terminal < 0)),
+        # CVaR on horizon terminal return (at 1y horizon = annual return tail).
         "cvar_5": cvar(terminal, 0.05),
     }
     if bust is not None:
@@ -109,6 +172,37 @@ def summarize(
     if goal is not None:
         summary["goal_prob"] = goal_probability(sim_returns, goal)
     return summary
+
+
+def model_median_summary(
+    results: dict[str, ModelResult],
+    category: str = "montecarlo",
+) -> dict[str, float]:
+    """Median metrics across models in a category (robust consensus view)."""
+    summaries = [
+        res.summary for res in results.values() if res.category == category
+    ]
+    if not summaries:
+        return {}
+
+    keys = (
+        "cagr_p5",
+        "cagr_median",
+        "cagr_p95",
+        "maxdd_median",
+        "maxdd_p95",
+        "terminal_median",
+        "prob_loss",
+        "cvar_5",
+        "bust_prob",
+        "goal_prob",
+    )
+    median: dict[str, float] = {}
+    for key in keys:
+        vals = [s[key] for s in summaries if key in s]
+        if vals:
+            median[key] = float(np.median(vals))
+    return median
 
 
 def conservative_envelope(
@@ -121,103 +215,77 @@ def conservative_envelope(
     and the most severe drawdown tail across the selected models.
     """
     summaries = [
-        res.summary for res in results.values() if res.category == category
+        (name, res.summary)
+        for name, res in results.items()
+        if res.category == category
     ]
     if not summaries:
         return {}
 
-    envelope: dict[str, float] = {
-        "cagr_p5": min(s["cagr_p5"] for s in summaries),
-        "cagr_median": min(s["cagr_median"] for s in summaries),
-        "cagr_p95": min(s["cagr_p95"] for s in summaries),
-        "maxdd_median": min(s["maxdd_median"] for s in summaries),
-        "maxdd_p95": min(s["maxdd_p95"] for s in summaries),
-        "terminal_median": min(s["terminal_median"] for s in summaries),
-        "prob_loss": max(s["prob_loss"] for s in summaries),
-        "cvar_5": min(s["cvar_5"] for s in summaries),
-    }
-    if all("bust_prob" in s for s in summaries):
-        envelope["bust_prob"] = max(s["bust_prob"] for s in summaries)
-    if all("goal_prob" in s for s in summaries):
-        envelope["goal_prob"] = min(s["goal_prob"] for s in summaries)
+    keys_min = (
+        "cagr_p5",
+        "cagr_median",
+        "cagr_p95",
+        "maxdd_median",
+        "maxdd_p95",
+        "terminal_median",
+        "cvar_5",
+    )
+    keys_max = ("prob_loss",)
+
+    envelope: dict[str, float] = {}
+    for key in keys_min:
+        envelope[key] = min(s[1][key] for s in summaries)
+    for key in keys_max:
+        envelope[key] = max(s[1][key] for s in summaries)
+
+    if all("bust_prob" in s[1] for s in summaries):
+        envelope["bust_prob"] = max(s[1]["bust_prob"] for s in summaries)
+    if all("goal_prob" in s[1] for s in summaries):
+        envelope["goal_prob"] = min(s[1]["goal_prob"] for s in summaries)
     return envelope
 
 
-def evaluate_strategy(
+def envelope_attribution(
+    results: dict[str, ModelResult],
     envelope: dict[str, float],
-    max_acceptable_dd: float = -0.30,
-    bust: float | None = None,
-    bust_tolerance: float = 0.05,
-) -> tuple[str, list[tuple[str, str]]]:
-    """Return verdict (PASS/CAUTION/FAIL) and list of (level, message) checks."""
-    if not envelope:
-        return "FAIL", [("fail", "No Monte Carlo models available for assessment.")]
+    category: str = "montecarlo",
+) -> dict[str, str]:
+    """Map each envelope metric to the model label that produced the extreme."""
+    summaries = [
+        (res.label, res.summary)
+        for res in results.values()
+        if res.category == category
+    ]
+    if not summaries or not envelope:
+        return {}
 
-    checks: list[tuple[str, str]] = []
+    keys_min = (
+        "cagr_p5",
+        "cagr_median",
+        "cagr_p95",
+        "maxdd_median",
+        "maxdd_p95",
+        "terminal_median",
+        "cvar_5",
+        "goal_prob",
+    )
+    keys_max = ("prob_loss", "bust_prob")
 
-    if envelope["cagr_p5"] <= 0:
-        checks.append(
-            (
-                "fail",
-                "CAGR p5 is non-positive — realistic downside loses money.",
-            )
-        )
-    elif envelope["cagr_p5"] < 0.02:
-        checks.append(
-            ("warn", "CAGR p5 is barely positive — limited upside in bad scenarios.")
-        )
+    attr: dict[str, str] = {}
+    for key in keys_min:
+        if key not in envelope:
+            continue
+        if key == "goal_prob":
+            label = min(summaries, key=lambda s: s[1].get(key, float("inf")))[0]
+        else:
+            label = min(summaries, key=lambda s: s[1].get(key, float("inf")))[0]
+        attr[key] = label
 
-    if envelope["prob_loss"] >= 0.5:
-        checks.append(
-            (
-                "fail",
-                f"P(loss) = {envelope['prob_loss']:.0%} exceeds 50% threshold.",
-            )
-        )
-    elif envelope["prob_loss"] >= 0.3:
-        checks.append(
-            ("warn", f"P(loss) = {envelope['prob_loss']:.0%} is elevated.")
-        )
+    for key in keys_max:
+        if key not in envelope:
+            continue
+        label = max(summaries, key=lambda s: s[1].get(key, float("-inf")))[0]
+        attr[key] = label
 
-    if envelope["maxdd_p95"] < max_acceptable_dd:
-        checks.append(
-            (
-                "fail",
-                f"MaxDD p95 ({envelope['maxdd_p95']:.0%}) exceeds tolerance "
-                f"({max_acceptable_dd:.0%}).",
-            )
-        )
-    elif envelope["maxdd_p95"] < max_acceptable_dd * 1.1:
-        checks.append(
-            (
-                "warn",
-                f"MaxDD p95 ({envelope['maxdd_p95']:.0%}) is close to the "
-                f"{max_acceptable_dd:.0%} sizing limit.",
-            )
-        )
-
-    if bust is not None and "bust_prob" in envelope:
-        if envelope["bust_prob"] > bust_tolerance:
-            checks.append(
-                (
-                    "fail",
-                    f"P(bust) = {envelope['bust_prob']:.0%} exceeds "
-                    f"{bust_tolerance:.0%} tolerance.",
-                )
-            )
-        elif envelope["bust_prob"] > bust_tolerance * 0.5:
-            checks.append(
-                (
-                    "warn",
-                    f"P(bust) = {envelope['bust_prob']:.0%} is non-trivial.",
-                )
-            )
-
-    if any(level == "fail" for level, _ in checks):
-        verdict = "FAIL"
-    elif any(level == "warn" for level, _ in checks):
-        verdict = "CAUTION"
-    else:
-        verdict = "PASS"
-
-    return verdict, checks
+    return attr

@@ -37,18 +37,24 @@ class BayesianNIG(SimulationModel):
         self._fitted = True
         return self
 
+    def calibration_summary(self, periods: float = 252.0) -> dict[str, str]:
+        ann_mu = self.xbar_ * periods
+        ann_sigma = float(np.sqrt(self.s2_) * np.sqrt(periods))
+        return {
+            "Drift (ann.)": f"{ann_mu:.2%}",
+            "Volatility (ann.)": f"{ann_sigma:.2%}",
+            "Sample size": f"{self.n_:,}",
+        }
+
     def simulate(
         self, horizon: int, sims: int, rng: np.random.Generator
     ) -> np.ndarray:
         self._check_fitted()
         n = self.n_
-        # sigma^2 | data ~ Inv-Gamma: (n-1) s^2 / sigma^2 ~ chi2_{n-1}
         chi2 = rng.chisquare(df=n - 1, size=sims)
         sigma2 = (n - 1) * self.s2_ / np.maximum(chi2, 1e-12)
-        # mu | sigma^2, data ~ Normal(xbar, sigma^2 / n)
         mu = self.xbar_ + rng.standard_normal(sims) * np.sqrt(sigma2 / n)
         sigma = np.sqrt(sigma2)
-        # Per-path i.i.d. Gaussian log returns with that path's (mu, sigma).
         shocks = rng.standard_normal((horizon, sims))
         log_paths = mu[np.newaxis, :] + shocks * sigma[np.newaxis, :]
         return self._from_log(log_paths)
@@ -66,6 +72,9 @@ class BayesianBootstrap(SimulationModel):
         self._fitted = True
         return self
 
+    def calibration_summary(self, periods: float = 252.0) -> dict[str, str]:
+        return {"Resampled observations": f"{self.returns_.size:,}"}
+
     def simulate(
         self, horizon: int, sims: int, rng: np.random.Generator
     ) -> np.ndarray:
@@ -73,7 +82,6 @@ class BayesianBootstrap(SimulationModel):
         n = self.returns_.size
         out = np.empty((horizon, sims), dtype=float)
         for j in range(sims):
-            # Dirichlet(1,...,1) weights == uniform on the simplex.
             w = rng.dirichlet(np.ones(n))
             idx = rng.choice(n, size=horizon, p=w)
             out[:, j] = self.returns_[idx]

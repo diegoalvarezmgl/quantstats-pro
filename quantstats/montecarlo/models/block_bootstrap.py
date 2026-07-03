@@ -86,6 +86,12 @@ class BlockBootstrap(SimulationModel):
         self._fitted = True
         return self
 
+    def calibration_summary(self, periods: float = 252.0) -> dict[str, str]:
+        return {
+            "Block length": f"{self.block_length_}",
+            "Resampled observations": f"{self.returns_.size:,}",
+        }
+
     def simulate(
         self, horizon: int, sims: int, rng: np.random.Generator
     ) -> np.ndarray:
