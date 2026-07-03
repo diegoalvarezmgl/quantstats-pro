@@ -1,6 +1,35 @@
 Changelog
 ===========
 
+0.4.1
+-----
+
+**Monte Carlo / Reports**
+
+- Redesigned `reports.html_montecarlo()` for institutional, informational use:
+  - Removed PASS/CAUTION/FAIL verdict and tolerance thresholds (`max_acceptable_dd`,
+    `bust_tolerance`); replaced with neutral **Risk Summary** KPI cards and
+    envelope attribution table.
+  - Default forward horizon is now **1 year** (`periods_per_year` trading days)
+    instead of full history; pass `horizon=len(returns)` for full-history simulation.
+  - `periods_per_year` defaults to **auto-inference** (252 for weekday-only data,
+    365 when >5% of observations fall on weekends — crypto / 24-7).
+  - **Historical** row in the comparison table (trailing window matching horizon).
+  - Historical cumulative path overlaid on fan charts; historical terminal marked
+    on histograms; **Hist. Percentile** ranks the realised outcome within each model.
+  - **Model Calibration** diagnostics table (annualised drift/vol and model-specific
+    parameters).
+  - CVaR labelled dynamically by horizon (e.g. `CVaR 5% (1y)`); computed on
+    horizon terminal return.
+  - Removed **Trimmed (top 5%)** stress model; Trimmed (top 1%) retained.
+
+**Monte Carlo engine**
+
+- Fixed Heston double variance-drag bug (simulated drift now matches sample mean).
+- Fixed GARCH drift inflation (simulations anchored to sample mean, not MLE `mu`).
+- Removed `analytics.evaluate_strategy()`; added `historical_summary()`,
+  `realism_percentile()`, `envelope_attribution()`, and `infer_periods_per_year()`.
+
 0.4.0
 -----
 

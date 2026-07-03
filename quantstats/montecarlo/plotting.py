@@ -20,9 +20,7 @@ _PRIMARY = "#348dc1"
 _BAND = "#9bc4e2"
 _ACCENT = "#003366"
 _MEDIAN = "#c1431d"
-_PASS = "#2e7d32"
-_WARN = "#f9a825"
-_FAIL = "#c62828"
+_HIST = "#1a1a1a"
 _PALETTE = [
     "#348dc1",
     "#c1431d",
@@ -42,8 +40,9 @@ def fan_chart_figure(
     n_paths: int = 100,
     figsize: tuple[float, float] = (8, 4),
     title: str | None = None,
+    historical_cum: np.ndarray | None = None,
 ):
-    """Fan chart: sample paths (faint), confidence band, and median."""
+    """Fan chart: sample paths (faint), confidence band, median, optional history."""
     paths = analytics.cumulative_paths(result.sim_returns) * 100.0
     median, lower, upper = analytics.fan_chart(result.sim_returns, level=level)
     x = np.arange(paths.shape[0])
@@ -67,8 +66,20 @@ def fan_chart_figure(
         label=f"{int(level * 100)}% band",
     )
     ax.plot(x, median * 100.0, color=_MEDIAN, lw=1.6, label="Median")
-    ax.axhline(0, color="gray", lw=0.8, ls="--")
 
+    if historical_cum is not None and historical_cum.size:
+        hx = np.arange(historical_cum.size)
+        ax.plot(
+            hx,
+            historical_cum * 100.0,
+            color=_HIST,
+            lw=2.0,
+            ls="-",
+            label="Historical",
+            zorder=5,
+        )
+
+    ax.axhline(0, color="gray", lw=0.8, ls="--")
     ax.set_title(title or result.label, fontweight="bold", color="black")
     ax.set_xlabel("Periods")
     ax.set_ylabel("Cumulative Return (%)")
@@ -83,6 +94,7 @@ def terminal_hist_figure(
     result,
     figsize: tuple[float, float] = (8, 3),
     title: str | None = None,
+    historical_terminal: float | None = None,
 ):
     """Histogram of terminal cumulative returns across simulations."""
     terminal = result.terminal_values() * 100.0
@@ -94,6 +106,13 @@ def terminal_hist_figure(
     ax.axvline(
         float(np.median(terminal)), color=_MEDIAN, lw=1.5, label="Median"
     )
+    if historical_terminal is not None:
+        ax.axvline(
+            historical_terminal * 100.0,
+            color=_HIST,
+            lw=2.0,
+            label="Historical",
+        )
     ax.axvline(0, color="gray", lw=0.8, ls="--")
 
     ax.set_title(
@@ -115,6 +134,7 @@ def overlay_fan_figure(
     level: float = 0.95,
     figsize: tuple[float, float] = (10, 5),
     title: str = "Model Medians & Envelope",
+    historical_cum: np.ndarray | None = None,
 ):
     """Overlay median paths per model with a pooled confidence envelope."""
     if not results:
@@ -158,6 +178,17 @@ def overlay_fan_figure(
         color = _PALETTE[i % len(_PALETTE)]
         ax.plot(x, med * 100.0, color=color, lw=1.4, label=res.label)
 
+    if historical_cum is not None and historical_cum.size:
+        hx = np.arange(historical_cum.size)
+        ax.plot(
+            hx,
+            historical_cum * 100.0,
+            color=_HIST,
+            lw=2.2,
+            label="Historical (trailing window)",
+            zorder=6,
+        )
+
     ax.axhline(0, color="gray", lw=0.8, ls="--")
     ax.set_title(title, fontweight="bold", color="black")
     ax.set_xlabel("Periods")
@@ -171,11 +202,10 @@ def overlay_fan_figure(
 
 def maxdd_distribution_figure(
     results: list,
-    max_acceptable_dd: float | None = None,
     figsize: tuple[float, float] = (10, 5),
     title: str = "Max Drawdown Distribution by Model",
 ):
-    """Horizontal boxplot of max drawdown distributions with sizing threshold."""
+    """Horizontal boxplot of max drawdown distributions."""
     if not results:
         fig, ax = plt.subplots(figsize=figsize)
         ax.text(0.5, 0.5, "No models", ha="center", va="center")
@@ -200,16 +230,6 @@ def maxdd_distribution_figure(
         patch.set_facecolor(_PRIMARY)
         patch.set_alpha(0.55)
 
-    if max_acceptable_dd is not None:
-        ax.axvline(
-            max_acceptable_dd * 100.0,
-            color=_FAIL,
-            lw=1.5,
-            ls="--",
-            label=f"Sizing limit ({max_acceptable_dd:.0%})",
-        )
-        ax.legend(loc="lower right", frameon=False, fontsize=9)
-
     ax.set_xlabel("Max Drawdown (%)")
     ax.set_title(title, fontweight="bold", color="black")
     ax.spines["top"].set_visible(False)
@@ -222,6 +242,7 @@ def cagr_quantiles_figure(
     results: list,
     figsize: tuple[float, float] = (10, 5),
     title: str = "CAGR Quantiles by Model",
+    historical_cagr: float | None = None,
 ):
     """Horizontal range plot of CAGR p5–median–p95 per model."""
     if not results:
@@ -248,6 +269,16 @@ def cagr_quantiles_figure(
         ax.plot([lo, hi], [i, i], color=color, lw=2.0, solid_capstyle="round")
         ax.scatter([lo, hi], [i, i], color=color, s=28, zorder=3)
         ax.scatter([mid], [i], color=_MEDIAN, s=48, zorder=4, marker="D")
+
+    if historical_cagr is not None:
+        ax.axvline(
+            historical_cagr * 100.0,
+            color=_HIST,
+            lw=2.0,
+            ls="-",
+            label="Historical CAGR",
+        )
+        ax.legend(loc="lower right", frameon=False, fontsize=9)
 
     ax.axvline(0, color="gray", lw=0.8, ls="--")
     ax.set_yticks(y)

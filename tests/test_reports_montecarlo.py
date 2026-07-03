@@ -43,17 +43,19 @@ class TestMonteCarloTearsheet:
         assert "Monte Carlo Tearsheet" in content
         assert not re.search(r"\{\{\s*\w+\s*\}\}", content)
 
-    def test_contains_assessment_and_sections(self, asset_returns):
+    def test_contains_risk_summary_and_sections(self, asset_returns):
         content = _render(
             asset_returns, models=["gbm", "bootstrap"], sims=100, horizon=120, seed=1
         )
-        assert "Strategy Assessment" in content
+        assert "Risk Summary" in content
+        assert "Model Calibration" in content
         assert "Monte Carlo Models" in content
         assert "Stress Tests" in content
+        assert "Historical" in content
         assert 'id="overlay_fan"' in content
         assert 'id="maxdd_dist"' in content
         assert 'id="cagr_quantiles"' in content
-        assert "Verdict:" in content
+        assert "Verdict:" not in content
         assert "GBM" in content
         assert "Bootstrap" in content
 
@@ -97,6 +99,7 @@ class TestMonteCarloTearsheet:
         )
         assert "Assumptions:" in content
         assert "seed 42" in content
+        assert "periods/year" in content.lower() or "periods/year" in content
 
     def test_drift_stress_note_in_header(self, asset_returns):
         content = _render(
@@ -116,3 +119,16 @@ class TestMonteCarloTearsheet:
         assert "<details>" in content
         assert 'id="fan_charts"' in content
         assert 'id="terminal_hists"' in content
+
+    def test_realism_percentile_column(self, asset_returns):
+        content = _render(
+            asset_returns, models=["gbm", "bootstrap"], sims=100, horizon=120, seed=1
+        )
+        assert "Hist. Percentile" in content
+
+    def test_no_trimmed_5pct_model(self, asset_returns):
+        content = _render(
+            asset_returns, models=["gbm", "trimmed_1pct"], sims=50, horizon=80, seed=1
+        )
+        assert "Trimmed (top 1%)" in content
+        assert "Trimmed (top 5%)" not in content

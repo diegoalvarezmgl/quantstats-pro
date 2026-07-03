@@ -86,3 +86,7 @@ class SimulationModel(ABC):
             raise RuntimeError(
                 f"Model '{self.name}' must be calibrated before simulate()."
             )
+
+    def calibration_summary(self, periods: float = 252.0) -> dict[str, str]:
+        """Human-readable calibrated parameters for the tearsheet."""
+        return {}

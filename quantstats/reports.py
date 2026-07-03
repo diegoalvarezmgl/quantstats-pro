@@ -1047,17 +1047,19 @@ _MC_TABLE_COLUMNS = [
     ("cagr_median", "CAGR Median", True, False),
     ("cagr_p95", "CAGR p95", True, False),
     ("maxdd_median", "MaxDD Median", True, False),
-    ("maxdd_p95", "MaxDD p95", True, True),
-    ("terminal_median", "Terminal Median", True, False),
+    ("maxdd_p95", "MaxDD Worst 5%", True, True),
+    ("terminal_median", "Return Median", True, False),
     ("prob_loss", "P(Loss)", True, True),
     ("cvar_5", "CVaR 5%", True, True),
     ("bust_prob", "P(Bust)", True, True),
     ("goal_prob", "P(Goal)", True, False),
+    ("realism_pct", "Hist. Percentile", False, False),
 ]
 
 _MC_KPI_METRICS = [
     ("cagr_p5", "CAGR p5", True),
-    ("maxdd_p95", "MaxDD p95", True),
+    ("cagr_median", "CAGR Median", True),
+    ("maxdd_p95", "MaxDD Worst 5%", True),
     ("prob_loss", "P(Loss)", True),
     ("cvar_5", "CVaR 5%", True),
     ("bust_prob", "P(Bust)", True),
@@ -1065,16 +1067,29 @@ _MC_KPI_METRICS = [
 
 
 def _mc_format_value(key: str, val: float, is_pct: bool) -> str:
+    if key == "realism_pct":
+        return f"{val:.0f}%"
     if is_pct:
         return f"{val * 100:,.1f}%"
     return f"{val:,.2f}"
 
 
-def _mc_build_rows(results, columns):
+def _mc_cvar_label(horizon: int, periods: float) -> str:
+    years = horizon / periods if periods else 1.0
+    if abs(years - 1.0) < 0.05:
+        return "CVaR 5% (1y)"
+    if abs(years - round(years)) < 0.05 and years >= 1:
+        return f"CVaR 5% ({int(round(years))}y)"
+    return f"CVaR 5% ({horizon}p)"
+
+
+def _mc_build_rows(results, columns, extra: dict[str, dict] | None = None):
     """Build formatted comparison rows keyed by model label."""
     rows = {}
     for res in results.values():
-        summary = res.summary
+        summary = dict(res.summary)
+        if extra and res.label in extra:
+            summary.update(extra[res.label])
         row = {}
         for key, label, is_pct, _ in columns:
             if key not in summary:
@@ -1098,7 +1113,8 @@ def _mc_comparison_html(rows, columns):
         "</tr></thead><tbody>",
     ]
     for model, row in rows.items():
-        parts.append(f"<tr><td>{model}</td>")
+        row_cls = ' class="historical"' if model == "Historical" else ""
+        parts.append(f"<tr{row_cls}><td><strong>{model}</strong></td>")
         for label, risk in active_cols:
             val = row.get(label, "—")
             cls = ' class="risk"' if risk and label in risk_labels else ""
@@ -1108,69 +1124,67 @@ def _mc_comparison_html(rows, columns):
     return "".join(parts)
 
 
-def _mc_kpi_status(key: str, val: float, max_acceptable_dd: float, bust_tolerance: float):
-    if key == "cagr_p5":
-        if val <= 0:
-            return "fail"
-        if val < 0.02:
-            return "warn"
-        return "pass"
-    if key == "maxdd_p95":
-        if val < max_acceptable_dd:
-            return "fail"
-        if val < max_acceptable_dd * 1.1:
-            return "warn"
-        return "pass"
-    if key == "prob_loss":
-        if val >= 0.5:
-            return "fail"
-        if val >= 0.3:
-            return "warn"
-        return "pass"
-    if key == "bust_prob":
-        if val > bust_tolerance:
-            return "fail"
-        if val > bust_tolerance * 0.5:
-            return "warn"
-        return "pass"
-    if key == "cvar_5":
-        if val < -0.3:
-            return "fail"
-        if val < -0.1:
-            return "warn"
-        return "pass"
-    return "pass"
+def _mc_risk_summary_html(envelope, attribution, cvar_label: str):
+    """Neutral KPI cards and envelope attribution (no pass/fail verdict)."""
+    label_map = {key: label for key, label, _ in _MC_KPI_METRICS}
+    label_map["cvar_5"] = cvar_label
 
-
-def _mc_assessment_html(
-    envelope,
-    verdict,
-    checks,
-    max_acceptable_dd,
-    bust_tolerance,
-):
-    """Build KPI cards and verdict block for the assessment section."""
     parts = ['<div class="kpi-row">']
     for key, label, is_pct in _MC_KPI_METRICS:
         if key not in envelope:
             continue
         val = envelope[key]
-        status = _mc_kpi_status(key, val, max_acceptable_dd, bust_tolerance)
         display = _mc_format_value(key, val, is_pct)
         parts.append(
-            f'<div class="kpi {status}"><div class="label">{label}</div>'
+            f'<div class="kpi"><div class="label">{label_map.get(key, label)}</div>'
             f'<div class="value">{display}</div></div>'
         )
     parts.append("</div>")
 
-    verdict_cls = verdict.lower()
-    parts.append(f'<div class="verdict {verdict_cls}">Verdict: {verdict}')
-    if checks:
-        parts.append("<ul>")
-        for _level, msg in checks:
-            parts.append(f"<li>{msg}</li>")
-        parts.append("</ul>")
-    parts.append("</div>")
+    if attribution:
+        parts.append(
+            '<p class="note">Envelope extremes across Monte Carlo models '
+            "(most conservative quantiles).</p>"
+        )
+        parts.append(
+            "<table><thead><tr><th>Metric</th><th>Envelope</th>"
+            "<th>Source Model</th></tr></thead><tbody>"
+        )
+        for key, label, is_pct in _MC_KPI_METRICS:
+            if key not in envelope:
+                continue
+            val = _mc_format_value(key, envelope[key], is_pct)
+            src = attribution.get(key, "—")
+            parts.append(
+                f"<tr><td>{label_map.get(key, label)}</td>"
+                f"<td>{val}</td><td>{src}</td></tr>"
+            )
+        parts.append("</tbody></table>")
+    return "".join(parts)
+
+
+def _mc_calibration_html(results):
+    """Per-model calibration diagnostics table."""
+    param_keys: list[str] = []
+    for res in results.values():
+        for k in res.calibration_summary():
+            if k not in param_keys:
+                param_keys.append(k)
+    if not param_keys:
+        return '<p class="note">No calibration diagnostics available.</p>'
+
+    parts = [
+        "<table><thead><tr><th>Model</th>",
+        *[f"<th>{k}</th>" for k in param_keys],
+        "</tr></thead><tbody>",
+    ]
+    for res in results.values():
+        cal = res.calibration_summary()
+        parts.append(f"<tr><td>{res.label}</td>")
+        for k in param_keys:
+            parts.append(f"<td>{cal.get(k, '—')}</td>")
+        parts.append("</tr>")
+    parts.append("</tbody></table>")
     return "".join(parts)
 
 
@@ -1185,15 +1199,13 @@ def html_montecarlo(
     rf=0.0,
     title="Monte Carlo Tearsheet",
     output=None,
-    periods_per_year=252,
+    periods_per_year=None,
     download_filename="quantstats-montecarlo.html",
     figfmt="svg",
     template_path=None,
     confidence_level=0.95,
     drift="historical",
     match_dates=True,
-    max_acceptable_dd=-0.30,
-    bust_tolerance=0.05,
     **kwargs,
 ):
     """
@@ -1212,7 +1224,8 @@ def html_montecarlo(
     models : list[str], optional
         Subset of model names to run. Defaults to all registered models.
     horizon : int, optional
-        Periods per simulated path. Defaults to the length of the history.
+        Periods per simulated path. Defaults to one year (``periods_per_year``
+        trading days). Pass ``len(returns)`` for full-history horizon.
     sims : int, default 1000
         Number of simulated paths per model.
     bust : float, optional
@@ -1225,18 +1238,15 @@ def html_montecarlo(
         Report title.
     output : str or None, default None
         Output file path. If None, opens in browser / downloads in notebook.
-    periods_per_year : int, default 252
-        Periods per year for annualisation.
+    periods_per_year : int, optional
+        Periods per year for annualisation. When ``None``, inferred from the
+        return index (252 for weekdays-only, 365 for 24/7 data).
     figfmt : str, default "svg"
         Embedded figure format.
     confidence_level : float, default 0.95
         Confidence band level for the fan charts.
     drift : {"historical", "zero", "rf"}, default "historical"
         Drift handling before calibration (see ``montecarlo.run_models``).
-    max_acceptable_dd : float, default -0.30
-        Drawdown tolerance for the strategy assessment (MaxDD p95 sizing limit).
-    bust_tolerance : float, default 0.05
-        Maximum acceptable P(bust) when ``bust`` is set.
     """
     import matplotlib.pyplot as _plt
 
@@ -1244,6 +1254,7 @@ def html_montecarlo(
     from ._reporting import engine
     from .montecarlo import analytics as _mca
     from .montecarlo import plotting as _mcplt
+    from .montecarlo.core import infer_periods_per_year
 
     if match_dates and hasattr(returns, "dropna"):
         returns = returns.dropna()
@@ -1264,6 +1275,12 @@ def html_montecarlo(
         raise FileNotFoundError(f"Template file not found: {template_path}")
     tpl = template_path.read_text(encoding="utf-8")
 
+    periods = (
+        float(periods_per_year)
+        if periods_per_year is not None
+        else infer_periods_per_year(returns)
+    )
+
     results = _mc.run_models(
         returns,
         models=models,
@@ -1272,7 +1289,7 @@ def html_montecarlo(
         bust=bust,
         goal=goal,
         seed=seed,
-        periods=periods_per_year,
+        periods=periods,
         drift=drift,
         rf=rf,
     )
@@ -1281,27 +1298,55 @@ def html_montecarlo(
     stress_results = {k: v for k, v in results.items() if v.category == "stress"}
     mc_list = list(mc_results.values())
 
-    envelope = _mca.conservative_envelope(results)
-    verdict, checks = _mca.evaluate_strategy(
-        envelope,
-        max_acceptable_dd=max_acceptable_dd,
-        bust=bust,
-        bust_tolerance=bust_tolerance,
+    used_horizon = next(iter(results.values())).horizon if results else 0
+    hist_summary = _mca.historical_summary(
+        returns, used_horizon, periods=periods, bust=bust, goal=goal
     )
-    assessment_html = _mc_assessment_html(
-        envelope, verdict, checks, max_acceptable_dd, bust_tolerance
+    hist_cum = _mca.historical_cumulative(returns, used_horizon)
+    hist_window = _mca.historical_window(returns, used_horizon)
+    hist_terminal = (
+        float(_np.prod(1.0 + hist_window) - 1.0) if hist_window.size else 0.0
+    )
+    hist_cagr = (
+        float(_mca.cagr_values(hist_window.reshape(-1, 1), periods)[0])
+        if hist_window.size
+        else 0.0
     )
 
-    mc_rows = _mc_build_rows(mc_results, _MC_TABLE_COLUMNS)
-    comparison_html = _mc_comparison_html(mc_rows, _MC_TABLE_COLUMNS)
+    realism_extra = {}
+    for res in mc_results.values():
+        realism_extra[res.label] = {
+            "realism_pct": _mca.realism_percentile(
+                res.sim_returns, hist_terminal
+            )
+        }
+
+    cvar_label = _mc_cvar_label(used_horizon, periods)
+    table_columns = [
+        (k, cvar_label if k == "cvar_5" else lbl, pct, risk)
+        for k, lbl, pct, risk in _MC_TABLE_COLUMNS
+    ]
+
+    envelope = _mca.conservative_envelope(results)
+    attribution = _mca.envelope_attribution(results, envelope)
+    assessment_html = _mc_risk_summary_html(envelope, attribution, cvar_label)
+
+    mc_rows = _mc_build_rows(mc_results, table_columns, extra=realism_extra)
+    if hist_summary:
+        hist_row = {}
+        for key, label, is_pct, _ in table_columns:
+            if key in hist_summary:
+                hist_row[label] = _mc_format_value(key, hist_summary[key], is_pct)
+        mc_rows = {"Historical": hist_row, **mc_rows}
+    comparison_html = _mc_comparison_html(mc_rows, table_columns)
 
     if stress_results:
-        stress_rows = _mc_build_rows(stress_results, _MC_TABLE_COLUMNS)
-        stress_html = _mc_comparison_html(stress_rows, _MC_TABLE_COLUMNS)
+        stress_rows = _mc_build_rows(stress_results, table_columns)
+        stress_html = _mc_comparison_html(stress_rows, table_columns)
     else:
         stress_html = '<p class="note">No stress-test models in this run.</p>'
 
-    used_horizon = next(iter(results.values())).horizon if results else 0
+    calibration_html = _mc_calibration_html(results)
     model_names = list(results.keys())
 
     def _embed(fig):
@@ -1310,29 +1355,36 @@ def html_montecarlo(
         _plt.close(fig)
         return _embed_figure(figfile, figfmt)
 
-    overlay_fig = _mcplt.overlay_fan_figure(mc_list, level=confidence_level)
-    maxdd_fig = _mcplt.maxdd_distribution_figure(
-        mc_list, max_acceptable_dd=max_acceptable_dd
+    overlay_fig = _mcplt.overlay_fan_figure(
+        mc_list, level=confidence_level, historical_cum=hist_cum
     )
-    cagr_fig = _mcplt.cagr_quantiles_figure(mc_list)
+    maxdd_fig = _mcplt.maxdd_distribution_figure(mc_list)
+    cagr_fig = _mcplt.cagr_quantiles_figure(mc_list, historical_cagr=hist_cagr)
 
     fan_parts = []
     hist_parts = []
     for res in results.values():
         fan_fig = _mcplt.fan_chart_figure(
-            res, level=confidence_level, title=res.label
+            res,
+            level=confidence_level,
+            title=res.label,
+            historical_cum=hist_cum,
         )
         fan_parts.append(f'<div class="cell">{_embed(fan_fig)}</div>')
-        hist_fig = _mcplt.terminal_hist_figure(res, title=res.label)
+        hist_fig = _mcplt.terminal_hist_figure(
+            res, title=res.label, historical_terminal=hist_terminal
+        )
         hist_parts.append(f'<div class="cell">{_embed(hist_fig)}</div>')
 
     date_range = returns.index.strftime("%e %b, %Y")
+    horizon_years = used_horizon / periods if periods else 1.0
     params_parts = []
     if bust is not None:
         params_parts.append(f"Bust: {bust:.0%}")
     if goal is not None:
         params_parts.append(f"Goal: {goal:.0%}")
-    params_parts.append(f"Horizon: {used_horizon}")
+    params_parts.append(f"Horizon: {used_horizon} periods ({horizon_years:.1f}y)")
+    params_parts.append(f"Periods/year: {periods:.0f}")
     params_parts.append(f"Sims: {sims}")
     params_parts.append(f"Asset: {str(asset_title).upper()}")
     if drift != "historical":
@@ -1344,12 +1396,10 @@ def html_montecarlo(
     seed_str = str(seed) if seed is not None else "random"
     assumptions = (
         f"Assumptions: {sims:,} simulations per model &bull; seed {seed_str} "
-        f"&bull; horizon {used_horizon} periods &bull; drift={drift} "
-        f"&bull; models: {', '.join(model_names)} &bull; "
-        f"sizing limit MaxDD p95 = {max_acceptable_dd:.0%}"
+        f"&bull; forward horizon {used_horizon} periods ({horizon_years:.1f}y) "
+        f"&bull; {periods:.0f} periods/year &bull; drift={drift} "
+        f"&bull; models: {', '.join(model_names)}"
     )
-    if bust is not None:
-        assumptions += f" &bull; P(bust) tolerance = {bust_tolerance:.0%}"
 
     fragments = {
         "title": title,
@@ -1359,6 +1409,7 @@ def html_montecarlo(
         "generated_at": _dt.now().strftime("%d %b, %Y %H:%M").lstrip("0"),
         "assessment": assessment_html,
         "comparison_table": comparison_html,
+        "calibration_table": calibration_html,
         "overlay_fan": _embed(overlay_fig),
         "maxdd_dist": _embed(maxdd_fig),
         "cagr_quantiles": _embed(cagr_fig),
