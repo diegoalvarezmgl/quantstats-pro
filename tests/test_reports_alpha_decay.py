@@ -66,6 +66,8 @@ class TestAlphaDecayTearsheet:
         assert re.search(r"\d+/\d+", content)
         assert 'class="badge' in content
         assert "Excellent" in content or "Good" in content
+        assert 'class="kpi-grid"' in content
+        assert 'class="hint"' in content
 
     def test_metric_rows_for_all_metrics(self, asset_returns):
         content = _render(asset_returns, windows=(7, 15))

@@ -1498,7 +1498,13 @@ def _ad_status_counts_html(result):
     for mr in result.metrics:
         for wr in mr.windows.values():
             counts[wr.status] += 1
-    parts = ['<div class="kpi-row">']
+    hints = {
+        "excellent": "well above historical norm",
+        "good": "within acceptable range",
+        "warning": "drifting from historical norm",
+        "critical": "significant deviation from norm",
+    }
+    parts = ['<div class="kpi-grid">']
     for key, label in (
         ("excellent", "Excellent"),
         ("good", "Good"),
@@ -1507,10 +1513,22 @@ def _ad_status_counts_html(result):
     ):
         parts.append(
             f'<div class="kpi {key}"><div class="label">{label}</div>'
-            f'<div class="value">{counts[key]}</div></div>'
+            f'<div class="value">{counts[key]}</div>'
+            f'<div class="hint">{hints[key]}</div></div>'
         )
     parts.append("</div>")
     return "".join(parts)
+
+
+def _ad_score_tone(score_pct: float) -> str:
+    """Map aggregate health score to the same status palette as metric cells."""
+    if score_pct >= 75:
+        return "excellent"
+    if score_pct >= 50:
+        return "good"
+    if score_pct >= 25:
+        return "warning"
+    return "critical"
 
 
 def _ad_summary_table_html(result):
@@ -1684,11 +1702,13 @@ def html_alpha_decay(
     ]
     params_str = " &bull; ".join(params_parts) + " | "
 
+    score_tone = _ad_score_tone(result.score_pct)
     score_html = (
-        '<div class="score-box">'
-        f'<div class="score">{result.score}/{result.total}</div>'
-        f'<div class="sub">Health score — metric-window cells rated Good or Excellent '
-        f"({result.score_pct:.0f}%)</div></div>"
+        '<div class="kpi-grid score-grid">'
+        f'<div class="kpi {score_tone}"><div class="label">Health Score</div>'
+        f'<div class="value">{result.score}/{result.total}</div>'
+        f'<div class="hint">metric-window cells rated Good or Excellent '
+        f"({result.score_pct:.0f}%)</div></div></div>"
     )
 
     assumptions = (
