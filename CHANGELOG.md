@@ -13,6 +13,8 @@ Changelog
     envelope and attribution table.
   - Risk Summary KPI cards use a 3-column grid with risk/upside colour accents and
     per-metric hints.
+- Alpha Decay **Health Summary** KPI cards aligned to the same grid style (left
+  accent border, status colours, per-card hints).
   - Default forward horizon is now **1 year** (`periods_per_year` trading days)
     instead of full history; pass `horizon=len(returns)` for full-history simulation.
   - `periods_per_year` defaults to **auto-inference** (252 for weekday-only data,
