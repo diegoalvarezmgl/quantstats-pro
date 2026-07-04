@@ -1,8 +1,94 @@
 # Monte Carlo Simulations
 
-QuantStats includes built-in [Monte Carlo simulation](https://en.wikipedia.org/wiki/Monte_Carlo_method)
-capabilities for probabilistic risk analysis. Run thousands of simulations by shuffling
-historical returns to understand the range of possible outcomes for your strategy.
+QuantStats Pro includes built-in [Monte Carlo simulation](https://en.wikipedia.org/wiki/Monte_Carlo_method)
+capabilities for probabilistic risk analysis.
+
+There are **two layers**:
+
+1. **Legacy shuffle Monte Carlo** (`qs.stats.montecarlo`) — random permutation of
+   historical returns. Drop-in compatible with upstream QuantStats.
+2. **Multi-model engine** (`quantstats.montecarlo`) — calibrates several stochastic
+   models (GBM, GARCH, Heston, bootstraps, Bayesian, …), simulates forward paths,
+   and compares cross-model outcome distributions. Powers `qs.reports.html_montecarlo()`.
+
+---
+
+## Multi-Model Engine (Pro)
+
+### HTML tearsheet
+
+```python
+import quantstats as qs
+
+returns = qs.utils.download_returns("QQQ")
+
+qs.reports.html_montecarlo(
+    returns,
+    bust=-0.25,   # P(Bust) drawdown threshold
+    goal=0.50,    # P(Goal) terminal return target
+    sims=500,
+    seed=42,
+    output="qqq_montecarlo.html",
+)
+```
+
+Default forward horizon is **1 year** (`periods_per_year` trading days). Pass
+`horizon=len(returns)` for full-history simulation.
+
+The tearsheet includes:
+
+- **Risk Summary** — median across Monte Carlo models (consensus KPI grid)
+- **Monte Carlo Models** — comparison table with a historical rolling-window benchmark row
+- **Stress Tests** — conservative envelope (worst model per metric) + trimmed bootstrap
+- Fan charts, drawdown distribution, CAGR scenarios, and per-model detail (collapsible)
+
+### Programmatic API
+
+```python
+from quantstats.montecarlo import run_models, available_models
+from quantstats.montecarlo import analytics as mca
+
+print(available_models())
+
+results = run_models(
+    returns,
+    models=["gbm", "garch", "bootstrap"],
+    horizon=252,
+    sims=1000,
+    bust=-0.25,
+    goal=0.50,
+    seed=42,
+)
+
+gbm = results["gbm"]
+print(gbm.summary)  # cagr_p5, cagr_median, maxdd_p95, prob_loss, cvar_5, ...
+
+median = mca.model_median_summary(results)
+envelope = mca.conservative_envelope(results)
+hist = mca.historical_summary(returns, horizon=252)
+```
+
+### Built-in models
+
+| Name | Registry key | Category |
+|------|--------------|----------|
+| GBM | `gbm` | Monte Carlo |
+| Shuffle (legacy) | `shuffle` | Monte Carlo |
+| Bootstrap | `bootstrap` | Monte Carlo |
+| Block Bootstrap | `block_bootstrap` | Monte Carlo |
+| Jump Diffusion | `jump_diffusion` | Monte Carlo |
+| GARCH(1,1)-t | `garch` | Monte Carlo |
+| Heston (SV) | `heston` | Monte Carlo |
+| Bayesian (NIG) | `bayesian` | Monte Carlo |
+| Bayesian Bootstrap | `bayesian_bootstrap` | Monte Carlo |
+| Trimmed Bootstrap (top 1%) | `trimmed_1pct` | Stress |
+
+---
+
+## Legacy Shuffle Monte Carlo
+
+Run thousands of simulations by shuffling historical returns to understand the
+range of possible outcomes for your strategy.
 
 ## Quick Start
 

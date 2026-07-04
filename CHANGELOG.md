@@ -13,8 +13,8 @@ Changelog
     envelope and attribution table.
   - Risk Summary KPI cards use a 3-column grid with risk/upside colour accents and
     per-metric hints.
-- Alpha Decay **Health Summary** KPI cards aligned to the same grid style (left
-  accent border, status colours, per-card hints).
+  - Alpha Decay **Health Summary** KPI cards aligned to the same grid style (left
+    accent border, status colours, per-card hints).
   - Default forward horizon is now **1 year** (`periods_per_year` trading days)
     instead of full history; pass `horizon=len(returns)` for full-history simulation.
   - `periods_per_year` defaults to **auto-inference** (252 for weekday-only data,
@@ -31,6 +31,14 @@ Changelog
   - CVaR labelled dynamically by horizon (e.g. `CVaR 5% (1y)`); computed on
     horizon terminal return.
   - Removed **Trimmed (top 5%)** stress model; Trimmed (top 1%) retained.
+
+**README / Docs**
+
+- Documented `quantstats.montecarlo`, `quantstats.alphadecay`, and the four HTML
+  tearsheet types (`html`, `html_simple`, `html_montecarlo`, `html_alpha_decay`).
+- Updated `docs/montecarlo.md` with the multi-model engine and tearsheet API.
+- Added `docs/alphadecay.md`.
+- `MANIFEST.in` now includes all HTML report templates.
 
 **Monte Carlo engine**
 

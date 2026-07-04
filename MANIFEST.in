@@ -2,6 +2,9 @@
 include LICENSE.txt
 include requirements.txt
 include quantstats/report.html
+include quantstats/report_simple.html
+include quantstats/report_montecarlo.html
+include quantstats/report_alpha_decay.html
 
 # Include the data files
 recursive-include data *
