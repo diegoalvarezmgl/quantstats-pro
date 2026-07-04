@@ -33,9 +33,6 @@ jobs:
   publish:
     needs: build
     runs-on: ubuntu-latest
-    environment:
-      name: pypi
-      url: https://pypi.org/project/quantstats-pro/
     permissions:
       # Required for PyPI Trusted Publishing (OIDC)
       id-token: write
