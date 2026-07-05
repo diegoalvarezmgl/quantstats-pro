@@ -1,7 +1,7 @@
-[PyPI version](https://pypi.org/project/quantstats-pro/)
-[Python version](https://pypi.org/project/quantstats-pro/)
-[CI](https://github.com/diegoalvarezmgl/quantstats-pro/actions/workflows/ci.yml)
-[License](LICENSE.txt)
+[![PyPI version](https://img.shields.io/pypi/v/quantstats-pro.svg)](https://pypi.org/project/quantstats-pro/)
+[![Python version](https://img.shields.io/badge/python-3.10+-blue.svg?style=flat)](https://pypi.org/project/quantstats-pro/)
+[![CI](https://github.com/diegoalvarezmgl/quantstats-pro/actions/workflows/ci.yml/badge.svg)](https://github.com/diegoalvarezmgl/quantstats-pro/actions/workflows/ci.yml)
+[![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](https://github.com/diegoalvarezmgl/quantstats-pro/blob/main/LICENSE.txt)
 
 # QuantStats Pro: Advanced portfolio analytics for quants
 
@@ -24,7 +24,7 @@ import quantstats as qs       # import unchanged
 > namespace. Uninstall `quantstats` before installing `quantstats-pro`
 > (`pip uninstall quantstats`).
 
-[Changelog »](./CHANGELOG.md) · [Upstream »](https://github.com/ranaroussi/quantstats) · [Contributing »](./CONTRIBUTING.md)
+[Changelog »](https://github.com/diegoalvarezmgl/quantstats-pro/blob/main/CHANGELOG.md) · [Upstream »](https://github.com/ranaroussi/quantstats) · [Contributing »](https://github.com/diegoalvarezmgl/quantstats-pro/blob/main/CONTRIBUTING.md)
 
 ### Why QuantStats Pro?
 
@@ -81,7 +81,7 @@ Focused equity-curve view with core metrics and charts. Ideal when you need a cl
 qs.reports.html_simple(returns, benchmark="SPY", output="qqq_simple.html")
 ```
 
-Simple tearsheet — QQQ vs SPY
+![Simple tearsheet — QQQ vs SPY](https://raw.githubusercontent.com/diegoalvarezmgl/quantstats-pro/main/docs/report_simple.webp)
 
 ### Montecarlo tearsheet — `html_montecarlo`
 
@@ -98,7 +98,7 @@ qs.reports.html_montecarlo(
 )
 ```
 
-Montecarlo tearsheet — QQQ
+![Montecarlo tearsheet — QQQ](https://raw.githubusercontent.com/diegoalvarezmgl/quantstats-pro/main/docs/report_montecarlo.webp)
 
 ### Alpha Decay tearsheet — `html_alpha_decay`
 
@@ -112,7 +112,7 @@ qs.reports.html_alpha_decay(
 )
 ```
 
-Alpha Decay tearsheet — QQQ
+![Alpha Decay tearsheet — QQQ](https://raw.githubusercontent.com/diegoalvarezmgl/quantstats-pro/main/docs/report_alpha_decay.webp)
 
 ### Classic full tearsheet — `html`
 
@@ -122,9 +122,9 @@ The original QuantStats report — all metrics and charts, visually redesigned i
 qs.reports.html(returns, benchmark="SPY", output="qqq_full.html")
 ```
 
-Classic HTML tearsheet — QQQ vs SPY
+![Classic HTML tearsheet — QQQ vs SPY](https://raw.githubusercontent.com/diegoalvarezmgl/quantstats-pro/main/docs/report.webp)
 
-[View interactive classic sample](./docs/tearsheet.html) · [Montecarlo docs](./docs/montecarlo.md) · [Alpha Decay docs](./docs/alphadecay.md)
+[View interactive classic sample](https://htmlpreview.github.io/?https://github.com/diegoalvarezmgl/quantstats-pro/blob/main/docs/tearsheet.html) · [Montecarlo docs](https://github.com/diegoalvarezmgl/quantstats-pro/blob/main/docs/montecarlo.md) · [Alpha Decay docs](https://github.com/diegoalvarezmgl/quantstats-pro/blob/main/docs/alphadecay.md)
 
 ---
 
@@ -226,7 +226,7 @@ print(f"Goal probability: {mc.goal_probability:.1%}")
 mc.plot()
 ```
 
-[Full Montecarlo documentation »](./docs/montecarlo.md)
+[Full Montecarlo documentation »](https://github.com/diegoalvarezmgl/quantstats-pro/blob/main/docs/montecarlo.md)
 
 ---
 
@@ -267,7 +267,7 @@ for metric in result.metrics:
 
 Generate the full HTML tearsheet with `qs.reports.html_alpha_decay(returns)`.
 
-[Alpha Decay documentation »](./docs/alphadecay.md)
+[Alpha Decay documentation »](https://github.com/diegoalvarezmgl/quantstats-pro/blob/main/docs/alphadecay.md)
 
 ---
 
@@ -290,7 +290,7 @@ qs.reports.basic(returns)                  # basic metrics + plots
 qs.reports.full(returns)                   # full metrics + plots
 ```
 
-See [Montecarlo documentation](./docs/montecarlo.md) and `help(qs.stats.<method>)` for parameter details.
+See [Montecarlo documentation](https://github.com/diegoalvarezmgl/quantstats-pro/blob/main/docs/montecarlo.md) and `help(qs.stats.<method>)` for parameter details.
 
 ### Period-based vs trade-based metrics
 
@@ -336,7 +336,7 @@ When saving the monthly returns heatmap via `savefig={...}`, the figure may stil
 
 ## Legal Stuff
 
-**QuantStats Pro** is a fork of **QuantStats** by Ran Aroussi, distributed under the **Apache Software License**. See [LICENSE.txt](./LICENSE.txt) for details.
+**QuantStats Pro** is a fork of **QuantStats** by Ran Aroussi, distributed under the **Apache Software License**. See [LICENSE.txt](https://github.com/diegoalvarezmgl/quantstats-pro/blob/main/LICENSE.txt) for details.
 
 ## Credits
 
