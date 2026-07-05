@@ -12,11 +12,11 @@ Where original quantstats stops at classic performance stats and a single HTML t
 Built for systematic traders, portfolio managers, and quant researchers who need production-grade tearsheets from a returns series.
 
 ```bash
-pip install quantstats-pro   # replaces: pip install quantstats
+pip install quantstats-pro
 ```
 
 ```python
-import quantstats as qs       # import unchanged
+import quantstats as qs
 ```
 
 > **Note:** QuantStats Pro **cannot coexist** with the original `quantstats`

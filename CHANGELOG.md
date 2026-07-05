@@ -1,6 +1,13 @@
 Changelog
 ===========
 
+0.4.4
+-----
+
+**README / Docs**
+
+- Cleaned up install and import code snippets in README (removed inline comments).
+
 0.4.3
 -----
 
