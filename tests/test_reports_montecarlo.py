@@ -1,5 +1,5 @@
 """
-Tests for reports.html_montecarlo — the multi-model Monte Carlo tearsheet.
+Tests for reports.html_montecarlo — the multi-model Montecarlo tearsheet.
 """
 
 import os
@@ -40,7 +40,7 @@ class TestMonteCarloTearsheet:
             asset_returns, models=["gbm", "bootstrap"], sims=100, horizon=120, seed=1
         )
         assert "<!DOCTYPE html>" in content
-        assert "Monte Carlo Tearsheet" in content
+        assert "Montecarlo Tearsheet" in content
         assert not re.search(r"\{\{\s*\w+\s*\}\}", content)
 
     def test_contains_risk_summary_and_sections(self, asset_returns):
@@ -48,12 +48,12 @@ class TestMonteCarloTearsheet:
             asset_returns, models=["gbm", "bootstrap"], sims=100, horizon=120, seed=1
         )
         assert "Risk Summary" in content
-        assert "Median across Monte Carlo models" in content
+        assert "Median across Montecarlo models" in content
         assert "Model Calibration" in content
-        assert "Monte Carlo Models" in content
+        assert "Montecarlo Models" in content
         assert "Stress Tests" in content
         assert "Conservative Envelope" in content
-        assert "Envelope extremes across Monte Carlo models" in content
+        assert "Envelope extremes across Montecarlo models" in content
         assert "Historical" in content
         assert 'id="overlay_fan"' in content
         assert 'id="maxdd_dist"' in content

@@ -1,12 +1,12 @@
 """
-Multi-model Monte Carlo engine for QuantStats Pro.
+Multi-model Montecarlo engine for QuantStats Pro.
 
 This package characterises a single asset's return series with several models
 (GBM, jump-diffusion, GARCH, stochastic volatility, bootstraps, Bayesian, ...)
 and simulates forward paths from each, enabling a cross-model comparison of the
 distribution of outcomes (terminal value, CAGR, max drawdown, bust/goal probs).
 
-The legacy shuffle-based Monte Carlo (:mod:`quantstats._montecarlo`) remains the
+The legacy shuffle-based Montecarlo (:mod:`quantstats._montecarlo`) remains the
 default for ``qs.stats.montecarlo`` and is exposed here as the ``shuffle`` model.
 """
 

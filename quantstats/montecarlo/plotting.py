@@ -1,5 +1,5 @@
 """
-Plotting helpers for the Monte Carlo tearsheet.
+Plotting helpers for the Montecarlo tearsheet.
 
 These produce matplotlib figures from :class:`ModelResult` objects: overlay fan
 charts, drawdown distributions, CAGR quantile strips, and per-model detail

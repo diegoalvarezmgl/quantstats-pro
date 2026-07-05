@@ -5,7 +5,7 @@ Log returns are modelled as a Gaussian diffusion plus a compound-Poisson jump
 component. Parameters are estimated with a simple, robust threshold method:
 periods whose log return deviates from the mean by more than ``k`` robust
 standard deviations are flagged as jumps; the diffusion is fit on the remainder
-and the jump size distribution on the flagged set. See the Monte Carlo challenge
+and the jump size distribution on the flagged set. See the Montecarlo challenge
 notes on jump identification (threshold vs EM).
 """
 

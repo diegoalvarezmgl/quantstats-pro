@@ -18,9 +18,9 @@
 # limitations under the License.
 
 """
-Monte Carlo Simulation Module
+Montecarlo Simulation Module
 
-This module provides Monte Carlo simulation functionality for portfolio
+This module provides Montecarlo simulation functionality for portfolio
 analysis. It allows users to generate multiple simulated return paths
 by shuffling historical returns, enabling probability-based risk assessment.
 """
@@ -35,9 +35,9 @@ import pandas as pd
 @dataclass
 class MonteCarloResult:
     """
-    Container for Monte Carlo simulation results.
+    Container for Montecarlo simulation results.
 
-    This class holds the results of a Monte Carlo simulation and provides
+    This class holds the results of a Montecarlo simulation and provides
     convenient methods for analyzing and visualizing the simulated paths.
 
     Attributes
@@ -225,7 +225,7 @@ def run_montecarlo(
     seed: int | None = None,
 ) -> MonteCarloResult:
     """
-    Run Monte Carlo simulation by shuffling returns.
+    Run Montecarlo simulation by shuffling returns.
 
     This function creates multiple simulated return paths by randomly
     shuffling the historical returns. This preserves the return distribution

@@ -1934,7 +1934,7 @@ def monthly_returns(
     )
 
 
-# ======== MONTE CARLO PLOTS ========
+# ======== MONTECARLO PLOTS ========
 
 
 def montecarlo(
@@ -1943,7 +1943,7 @@ def montecarlo(
     bust: float | None = None,
     goal: float | None = None,
     seed: int | None = None,
-    title: str = "Monte Carlo Simulation",
+    title: str = "Montecarlo Simulation",
     figsize: tuple[float, float] = (10, 6),
     grayscale: bool = False,
     fontname: str = "Arial",
@@ -1954,7 +1954,7 @@ def montecarlo(
     confidence_level: float = 0.95,
 ) -> _Figure | None:
     """
-    Plot Monte Carlo simulation results.
+    Plot Montecarlo simulation results.
 
     This function can accept either a MonteCarloResult object (from qs.stats.montecarlo)
     or a returns Series to run a new simulation.
@@ -1972,7 +1972,7 @@ def montecarlo(
     seed : int, optional
         Random seed for reproducibility.
     title : str, optional
-        Chart title (default: "Monte Carlo Simulation").
+        Chart title (default: "Montecarlo Simulation").
     figsize : tuple, optional
         Figure size (default: (10, 6)).
     grayscale : bool, optional
@@ -2011,7 +2011,7 @@ def montecarlo(
     if isinstance(mc_result_or_returns, MonteCarloResult):
         mc_result = mc_result_or_returns
     else:
-        # Run Monte Carlo simulation
+        # Run Montecarlo simulation
         mc_result = _get_stats().montecarlo(
             mc_result_or_returns,
             sims=sims,
@@ -2049,7 +2049,7 @@ def montecarlo_distribution(
     bins: int = 50,
 ) -> _Figure | None:
     """
-    Plot histogram of terminal values from Monte Carlo simulation.
+    Plot histogram of terminal values from Montecarlo simulation.
 
     This function can accept either a MonteCarloResult object (from qs.stats.montecarlo)
     or a returns Series to run a new simulation.
@@ -2092,7 +2092,7 @@ def montecarlo_distribution(
     if isinstance(mc_result_or_returns, MonteCarloResult):
         mc_result = mc_result_or_returns
     else:
-        # Run Monte Carlo simulation
+        # Run Montecarlo simulation
         mc_result = _get_stats().montecarlo(mc_result_or_returns, sims=sims, seed=seed)
 
     return _core.plot_montecarlo_distribution(

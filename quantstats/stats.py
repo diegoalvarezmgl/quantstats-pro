@@ -3126,12 +3126,12 @@ def drawdown_details(drawdown):
     return _drawdown_details(drawdown)
 
 
-# ======== MONTE CARLO ========
+# ======== MONTECARLO ========
 
 
 def montecarlo(returns, sims=1000, bust=None, goal=None, seed=None):
     """
-    Run Monte Carlo simulation by shuffling returns.
+    Run Montecarlo simulation by shuffling returns.
 
     This function creates multiple simulated return paths by randomly
     shuffling the historical returns. This preserves the return distribution
@@ -3185,9 +3185,9 @@ def montecarlo(returns, sims=1000, bust=None, goal=None, seed=None):
 
 def montecarlo_sharpe(returns, sims=1000, rf=0, periods=252, seed=None):
     """
-    Distribution of Sharpe ratios across Monte Carlo simulations.
+    Distribution of Sharpe ratios across Montecarlo simulations.
 
-    This function runs Monte Carlo simulations and calculates the Sharpe
+    This function runs Montecarlo simulations and calculates the Sharpe
     ratio for each simulated path, providing a distribution of possible
     Sharpe ratio outcomes.
 
@@ -3243,9 +3243,9 @@ def montecarlo_sharpe(returns, sims=1000, rf=0, periods=252, seed=None):
 
 def montecarlo_drawdown(returns, sims=1000, seed=None):
     """
-    Distribution of maximum drawdowns across Monte Carlo simulations.
+    Distribution of maximum drawdowns across Montecarlo simulations.
 
-    This function runs Monte Carlo simulations and returns statistics
+    This function runs Montecarlo simulations and returns statistics
     about the distribution of maximum drawdowns across all paths.
 
     Args:
@@ -3268,9 +3268,9 @@ def montecarlo_drawdown(returns, sims=1000, seed=None):
 
 def montecarlo_cagr(returns, sims=1000, periods=252, seed=None):
     """
-    Distribution of CAGR across Monte Carlo simulations.
+    Distribution of CAGR across Montecarlo simulations.
 
-    This function runs Monte Carlo simulations and calculates the
+    This function runs Montecarlo simulations and calculates the
     Compound Annual Growth Rate for each simulated path.
 
     Args:

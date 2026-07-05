@@ -1,5 +1,5 @@
 """
-Tests for the multi-model Monte Carlo engine (quantstats.montecarlo).
+Tests for the multi-model Montecarlo engine (quantstats.montecarlo).
 
 Stochastic models are tested deterministically via a seeded RNG: we assert on
 output shape, reproducibility and that recovered moments are within tolerance of

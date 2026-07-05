@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "quantstats-pro"
 dynamic = ["version"]
-description = "Enhanced drop-in replacement for QuantStats — portfolio analytics for quants"
+description = "Drop-in replacement for QuantStats — advanced risk engines, institutional HTML tearsheets, and actionable portfolio analytics for quants"
 readme = "README.md"
 license = "Apache-2.0"
 requires-python = ">=3.10"
