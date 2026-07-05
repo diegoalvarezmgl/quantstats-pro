@@ -1,6 +1,16 @@
 Changelog
 ===========
 
+0.4.3
+-----
+
+**README / Docs**
+
+- Restored shields.io badges (PyPI, Python, CI, License) at the top of README.
+- Restored tearsheet screenshots for `html_simple`, `html_montecarlo`, `html_alpha_decay`, and classic `html` using PyPI-compatible absolute image URLs.
+- Fixed interactive classic sample link to render via HTMLPreview instead of raw HTML source on GitHub.
+- Converted relative doc links (`CHANGELOG`, `CONTRIBUTING`, `LICENSE`, `docs/*.md`) to absolute GitHub URLs so they work on PyPI.
+
 0.4.2
 -----
 
