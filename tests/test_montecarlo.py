@@ -1,5 +1,5 @@
 """
-Tests for quantstats Monte Carlo simulation functionality
+Tests for quantstats Montecarlo simulation functionality
 """
 
 import pytest
@@ -96,7 +96,7 @@ class TestRunMontecarlo:
     """Test run_montecarlo function."""
 
     def test_basic_simulation(self, sample_returns):
-        """Test basic Monte Carlo simulation."""
+        """Test basic Montecarlo simulation."""
         mc = run_montecarlo(sample_returns, sims=100, seed=42)
         
         assert isinstance(mc, MonteCarloResult)
@@ -137,7 +137,7 @@ class TestRunMontecarlo:
 
 
 class TestStatsMonteCarlo:
-    """Test Monte Carlo functions exposed via stats module."""
+    """Test Montecarlo functions exposed via stats module."""
 
     def test_montecarlo_function(self, sample_returns):
         """Test stats.montecarlo function."""
@@ -158,7 +158,7 @@ class TestStatsMonteCarlo:
         assert mc.goal_probability is not None
 
     def test_montecarlo_cagr_uses_periods(self, sample_returns):
-        """Monte Carlo CAGR must respect periods_per_year for annualization."""
+        """Montecarlo CAGR must respect periods_per_year for annualization."""
         dist_252 = stats.montecarlo_cagr(sample_returns, sims=100, periods=252, seed=42)
         dist_365 = stats.montecarlo_cagr(sample_returns, sims=100, periods=365, seed=42)
 
@@ -168,7 +168,7 @@ class TestStatsMonteCarlo:
 
 
 class TestMonteCarloEdgeCases:
-    """Test edge cases for Monte Carlo simulations."""
+    """Test edge cases for Montecarlo simulations."""
 
     def test_single_simulation(self, sample_returns):
         """Test with single simulation."""

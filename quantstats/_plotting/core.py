@@ -1841,12 +1841,12 @@ def format_pct_axis(x, _):
     return res.replace(".0%", "%")
 
 
-# ======== MONTE CARLO PLOTS ========
+# ======== MONTECARLO PLOTS ========
 
 
 def plot_montecarlo(
     mc_result,
-    title="Monte Carlo Simulation",
+    title="Montecarlo Simulation",
     figsize=(10, 6),
     grayscale=False,
     fontname="Arial",
@@ -1857,13 +1857,13 @@ def plot_montecarlo(
     confidence_level=0.95,
 ):
     """
-    Plot Monte Carlo simulation results showing all paths with original highlighted.
+    Plot Montecarlo simulation results showing all paths with original highlighted.
 
     Parameters
     ----------
     mc_result : MonteCarloResult
-        Monte Carlo simulation result object
-    title : str, default "Monte Carlo Simulation"
+        Montecarlo simulation result object
+    title : str, default "Montecarlo Simulation"
         Chart title
     figsize : tuple, default (10, 6)
         Figure size
@@ -2038,12 +2038,12 @@ def plot_montecarlo_distribution(
     bins=50,
 ):
     """
-    Plot histogram of terminal values from Monte Carlo simulation.
+    Plot histogram of terminal values from Montecarlo simulation.
 
     Parameters
     ----------
     mc_result : MonteCarloResult
-        Monte Carlo simulation result object
+        Montecarlo simulation result object
     title : str, default "Terminal Value Distribution"
         Chart title
     figsize : tuple, default (10, 6)

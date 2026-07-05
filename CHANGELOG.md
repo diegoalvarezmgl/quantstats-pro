@@ -1,15 +1,29 @@
 Changelog
 ===========
 
+0.4.2
+-----
+
+**README / Docs**
+
+- README landing refresh: tearsheet screenshots (`html_simple`, `html_montecarlo`, `html_alpha_decay`, classic), restructured funnel, audience positioning, and updated interactive sample (`docs/tearsheet.html`).
+- PyPI project description aligned with README positioning.
+
+**Montecarlo / Reports**
+
+- Standardised user-facing naming to **Montecarlo** (one word) in HTML tearsheets, docs, and plot titles.
+
 0.4.1
 -----
 
-**Monte Carlo / Reports**
+**Montecarlo / Reports**
+
+- Standardised user-facing naming to **Montecarlo** (one word) in HTML tearsheets, docs, and plot titles.
 
 - Redesigned `reports.html_montecarlo()` for institutional, informational use:
   - Removed PASS/CAUTION/FAIL verdict and tolerance thresholds (`max_acceptable_dd`,
     `bust_tolerance`); replaced with neutral **Risk Summary** KPI cards (median
-    across Monte Carlo models) and a **Stress Tests** section with the conservative
+    across Montecarlo models) and a **Stress Tests** section with the conservative
     envelope and attribution table.
   - Risk Summary KPI cards use a 3-column grid with risk/upside colour accents and
     per-metric hints.
@@ -40,7 +54,7 @@ Changelog
 - Added `docs/alphadecay.md`.
 - `MANIFEST.in` now includes all HTML report templates.
 
-**Monte Carlo engine**
+**Montecarlo engine**
 
 - Fixed Heston double variance-drag bug (simulated drift now matches sample mean).
 - Fixed GARCH drift inflation (simulations anchored to sample mean, not MLE `mu`).
@@ -71,11 +85,11 @@ Changelog
   `alphadecay.analyze()` run in milliseconds on multi-year daily series.
 - Redesigned `reports.html_montecarlo()` tearsheet with actionable, conservative
   metrics and clearer structure:
-  - **Strategy Assessment** — conservative envelope across Monte Carlo models
+  - **Strategy Assessment** — conservative envelope across Montecarlo models
     (worst-case CAGR p5, MaxDD p95 sizing figure, P(loss), CVaR 5%, P(bust))
     with automatic PASS / CAUTION / FAIL verdict and configurable thresholds
     (`max_acceptable_dd`, `bust_tolerance`).
-  - **Monte Carlo Models** — comparison table with risk-quantile columns
+  - **Montecarlo Models** — comparison table with risk-quantile columns
     highlighted; redundant mean/terminal columns removed.
   - **Stress Tests** — trimmed bootstrap models separated from neutral
     simulations; drift `"zero"` / `"rf"` flagged as stress scenarios in the header.
@@ -83,7 +97,7 @@ Changelog
     ranges; per-model fan charts and terminal histograms moved to a collapsible
     appendix.
   - Reproducibility footer (sims, seed, horizon, drift, models).
-- Default embedded figure format for the Monte Carlo tearsheet is now `svg`.
+- Default embedded figure format for the Montecarlo tearsheet is now `svg`.
 
 **Alpha Decay**
 
@@ -92,7 +106,7 @@ Changelog
 - `alphadecay.analyze()` returns a structured `DecayResult` with per-metric,
   per-window observations, health score, and SOTA diagnostics.
 
-**Monte Carlo**
+**Montecarlo**
 
 - Redesigned `analytics.summarize()` metrics: `cagr_p5/median/p95`, `maxdd_median/p95`,
   `terminal_median`, `prob_loss`, `cvar_5` (plus optional `bust_prob` / `goal_prob`).
@@ -117,13 +131,13 @@ Changelog
   x-axis tick labels, and the metrics-table group separators render as a
   subtle gray rule. Fixed a daily histogram artefact where calendar-day
   resample invented 0% returns on weekends/holidays, spiking the centre bin.
-- New `reports.html_montecarlo()` — a multi-model Monte Carlo tearsheet for a
+- New `reports.html_montecarlo()` — a multi-model Montecarlo tearsheet for a
   single asset. Characterises the asset with several models and simulates
   forward paths, producing a cross-model comparison table plus per-model fan
   charts and terminal-return distributions.
 - The existing `reports.html()` is unchanged (full backwards compatibility).
 
-**Monte Carlo**
+**Montecarlo**
 
 - New `quantstats.montecarlo` engine with a common `SimulationModel` interface
   (`calibrate` + `simulate`) and a model registry. Built-in models: GBM,
@@ -227,7 +241,7 @@ QuantStats Pro is an enhanced, actively maintained drop-in replacement:
 - Added terminal output parameters table for `reports.full()` and `reports.basic()`
 
 - Added comprehensive test suite (125 tests):
-  - Tests for stats, reports, utils, plots, compat, extend_pandas, and Monte Carlo
+  - Tests for stats, reports, utils, plots, compat, extend_pandas, and Montecarlo
 
 0.0.78
 ------

@@ -1,5 +1,5 @@
 """
-Registry of Monte Carlo simulation models, keyed by name.
+Registry of Montecarlo simulation models, keyed by name.
 """
 
 from __future__ import annotations
@@ -24,7 +24,7 @@ def get_model(name: str) -> SimulationModel:
         return _REGISTRY[name]()
     except KeyError as exc:
         raise KeyError(
-            f"Unknown Monte Carlo model '{name}'. "
+            f"Unknown Montecarlo model '{name}'. "
             f"Available: {', '.join(available_models())}"
         ) from exc
 

@@ -4,7 +4,7 @@ Geometric Brownian Motion model.
 Calibrates the drift and volatility of log returns by maximum likelihood
 (sample mean and standard deviation) and simulates i.i.d. Gaussian log returns,
 converting them back to simple returns. This preserves the historical drift
-(see the Monte Carlo challenge notes on drift handling).
+(see the Montecarlo challenge notes on drift handling).
 """
 
 from __future__ import annotations

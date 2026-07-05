@@ -1,5 +1,5 @@
 """
-Base interface for Monte Carlo simulation models.
+Base interface for Montecarlo simulation models.
 
 A simulation model characterises an asset from its historical returns
 (``calibrate``) and produces forward paths of *simple periodic returns*
@@ -17,7 +17,7 @@ import pandas as pd
 
 class SimulationModel(ABC):
     """
-    Abstract base class for Monte Carlo characterisation models.
+    Abstract base class for Montecarlo characterisation models.
 
     Subclasses must define a unique ``name`` and implement :meth:`calibrate`
     and :meth:`simulate`. ``simulate`` must return an array of shape

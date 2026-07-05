@@ -1,11 +1,11 @@
-# Monte Carlo Simulations
+# Montecarlo Simulations
 
-QuantStats Pro includes built-in [Monte Carlo simulation](https://en.wikipedia.org/wiki/Monte_Carlo_method)
+QuantStats Pro includes built-in [Montecarlo simulation](https://en.wikipedia.org/wiki/Monte_Carlo_method)
 capabilities for probabilistic risk analysis.
 
 There are **two layers**:
 
-1. **Legacy shuffle Monte Carlo** (`qs.stats.montecarlo`) — random permutation of
+1. **Legacy shuffle Montecarlo** (`qs.stats.montecarlo`) — random permutation of
    historical returns. Drop-in compatible with upstream QuantStats.
 2. **Multi-model engine** (`quantstats.montecarlo`) — calibrates several stochastic
    models (GBM, GARCH, Heston, bootstraps, Bayesian, …), simulates forward paths,
@@ -37,8 +37,8 @@ Default forward horizon is **1 year** (`periods_per_year` trading days). Pass
 
 The tearsheet includes:
 
-- **Risk Summary** — median across Monte Carlo models (consensus KPI grid)
-- **Monte Carlo Models** — comparison table with a historical rolling-window benchmark row
+- **Risk Summary** — median across Montecarlo models (consensus KPI grid)
+- **Montecarlo Models** — comparison table with a historical rolling-window benchmark row
 - **Stress Tests** — conservative envelope (worst model per metric) + trimmed bootstrap
 - Fan charts, drawdown distribution, CAGR scenarios, and per-model detail (collapsible)
 
@@ -72,20 +72,20 @@ hist = mca.historical_summary(returns, horizon=252)
 
 | Name | Registry key | Category |
 |------|--------------|----------|
-| GBM | `gbm` | Monte Carlo |
-| Shuffle (legacy) | `shuffle` | Monte Carlo |
-| Bootstrap | `bootstrap` | Monte Carlo |
-| Block Bootstrap | `block_bootstrap` | Monte Carlo |
-| Jump Diffusion | `jump_diffusion` | Monte Carlo |
-| GARCH(1,1)-t | `garch` | Monte Carlo |
-| Heston (SV) | `heston` | Monte Carlo |
-| Bayesian (NIG) | `bayesian` | Monte Carlo |
-| Bayesian Bootstrap | `bayesian_bootstrap` | Monte Carlo |
+| GBM | `gbm` | Montecarlo |
+| Shuffle (legacy) | `shuffle` | Montecarlo |
+| Bootstrap | `bootstrap` | Montecarlo |
+| Block Bootstrap | `block_bootstrap` | Montecarlo |
+| Jump Diffusion | `jump_diffusion` | Montecarlo |
+| GARCH(1,1)-t | `garch` | Montecarlo |
+| Heston (SV) | `heston` | Montecarlo |
+| Bayesian (NIG) | `bayesian` | Montecarlo |
+| Bayesian Bootstrap | `bayesian_bootstrap` | Montecarlo |
 | Trimmed Bootstrap (top 1%) | `trimmed_1pct` | Stress |
 
 ---
 
-## Legacy Shuffle Monte Carlo
+## Legacy Shuffle Montecarlo
 
 Run thousands of simulations by shuffling historical returns to understand the
 range of possible outcomes for your strategy.
@@ -98,7 +98,7 @@ import quantstats as qs
 # fetch daily returns
 returns = qs.utils.download_returns('SPY')
 
-# run Monte Carlo simulation with 1000 paths
+# run Montecarlo simulation with 1000 paths
 mc = qs.stats.montecarlo(returns, sims=1000, seed=42)
 
 # view terminal value statistics
@@ -193,7 +193,7 @@ qs.plots.montecarlo_distribution(returns, sims=500, seed=42)
 
 ## Pandas Extension
 
-After calling `qs.extend_pandas()`, you can use Monte Carlo directly on Series:
+After calling `qs.extend_pandas()`, you can use Montecarlo directly on Series:
 
 ```python
 qs.extend_pandas()
@@ -242,7 +242,7 @@ print(mc.data.head())
 
 ## How It Works
 
-Monte Carlo simulation in QuantStats uses **return shuffling**:
+Montecarlo simulation in QuantStats uses **return shuffling**:
 
 1. Take your historical returns
 2. Randomly shuffle the order of returns (preserving the distribution)
@@ -264,7 +264,7 @@ This approach:
 
 ### `qs.stats.montecarlo(returns, sims=1000, bust=None, goal=None, seed=None)`
 
-Run Monte Carlo simulation on returns.
+Run Montecarlo simulation on returns.
 
 **Parameters:**
 - `returns`: pd.Series of daily returns

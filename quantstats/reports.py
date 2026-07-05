@@ -1157,9 +1157,9 @@ def _mc_kpi_row_html(metrics: dict[str, float], cvar_label: str) -> str:
 
 
 def _mc_risk_summary_html(median: dict[str, float], cvar_label: str) -> str:
-    """Neutral KPI cards: median across Monte Carlo models."""
+    """Neutral KPI cards: median across Montecarlo models."""
     if not median:
-        return '<p class="note">No Monte Carlo models in this run.</p>'
+        return '<p class="note">No Montecarlo models in this run.</p>'
     return _mc_kpi_row_html(median, cvar_label)
 
 
@@ -1177,7 +1177,7 @@ def _mc_envelope_attribution_html(
     parts = [
         '<h4>Conservative Envelope</h4>',
         _mc_kpi_row_html(envelope, cvar_label),
-        '<p class="note">Envelope extremes across Monte Carlo models '
+        '<p class="note">Envelope extremes across Montecarlo models '
         "(most conservative quantiles).</p>",
     ]
     if attribution:
@@ -1246,7 +1246,7 @@ def html_montecarlo(
     goal=None,
     seed=None,
     rf=0.0,
-    title="Monte Carlo Tearsheet",
+    title="Montecarlo Tearsheet",
     output=None,
     periods_per_year=None,
     download_filename="quantstats-montecarlo.html",
@@ -1258,7 +1258,7 @@ def html_montecarlo(
     **kwargs,
 ):
     """
-    Generate a multi-model Monte Carlo HTML tearsheet for a single asset.
+    Generate a multi-model Montecarlo HTML tearsheet for a single asset.
 
     Characterises the asset with several models (GBM, jump-diffusion, GARCH,
     Heston, bootstraps, Bayesian, ...) and simulates forward paths from each,
@@ -1283,7 +1283,7 @@ def html_montecarlo(
         Terminal-return threshold for goal probability (e.g. ``0.5``).
     seed : int, optional
         Base random seed for reproducibility.
-    title : str, default "Monte Carlo Tearsheet"
+    title : str, default "Montecarlo Tearsheet"
         Report title.
     output : str or None, default None
         Output file path. If None, opens in browser / downloads in notebook.

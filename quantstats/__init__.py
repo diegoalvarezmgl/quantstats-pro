@@ -108,7 +108,7 @@ def extend_pandas():
         stats.probabilistic_adjusted_sortino_ratio
     )
 
-    # Monte Carlo simulation
+    # Montecarlo simulation
     _po.montecarlo = stats.montecarlo  # type: ignore[attr-defined]
     _po.montecarlo_sharpe = stats.montecarlo_sharpe  # type: ignore[attr-defined]
     _po.montecarlo_drawdown = stats.montecarlo_drawdown  # type: ignore[attr-defined]
