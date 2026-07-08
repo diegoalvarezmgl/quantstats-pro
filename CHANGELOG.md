@@ -1,6 +1,15 @@
 Changelog
 ===========
 
+0.4.5
+-----
+
+**Bug Fixes**
+
+- Fixed ``html_montecarlo`` Max Drawdown boxplot crashing on matplotlib 3.7–3.9
+  (``TypeError`` from ``orientation=`` / ``tick_labels=``). Uses a signature-based
+  compatibility shim so the plot works from matplotlib 3.7 through 3.11+.
+
 0.4.4
 -----
 

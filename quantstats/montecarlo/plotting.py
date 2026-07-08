@@ -14,6 +14,7 @@ matplotlib.use("Agg", force=False)
 import matplotlib.pyplot as plt
 import numpy as np
 
+from .._compat import boxplot_compat_kwargs
 from . import analytics
 
 _PRIMARY = "#348dc1"
@@ -247,11 +248,10 @@ def maxdd_distribution_figure(
 
     bp = ax.boxplot(
         data,
-        orientation="horizontal",
-        tick_labels=labels,
         patch_artist=True,
         showfliers=False,
         medianprops={"color": _MEDIAN, "linewidth": 1.5},
+        **boxplot_compat_kwargs(labels, horizontal=True),
     )
     for i, patch in enumerate(bp["boxes"]):
         if i < n_hist:

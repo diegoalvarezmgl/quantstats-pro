@@ -139,3 +139,26 @@ class TestMonteCarloTearsheet:
         )
         assert "Trimmed (top 1%)" in content
         assert "Trimmed (top 5%)" not in content
+
+
+class TestMaxDdDistributionFigure:
+    """Regression: maxdd boxplot must work across matplotlib 3.7–3.11+ APIs."""
+
+    def test_maxdd_distribution_figure_renders(self, asset_returns):
+        from quantstats.montecarlo import plotting, run_models
+
+        results = run_models(
+            asset_returns,
+            models=["gbm", "bootstrap"],
+            sims=40,
+            horizon=60,
+            seed=1,
+        )
+        fig = plotting.maxdd_distribution_figure(list(results.values()))
+        try:
+            assert fig is not None
+            assert len(fig.axes) == 1
+        finally:
+            import matplotlib.pyplot as plt
+
+            plt.close(fig)

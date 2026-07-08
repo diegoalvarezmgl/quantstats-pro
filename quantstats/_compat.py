@@ -8,8 +8,10 @@ and numpy, ensuring that quantstats functions work consistently across various
 dependency versions. It handles deprecated functionality and version-specific changes.
 """
 
+import inspect
 import warnings
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -429,3 +431,35 @@ def safe_yfinance_download(tickers: str | list[str],
             return pd.DataFrame(columns=['Open', 'High', 'Low', 'Close', 'Volume', 'Adj Close'])
 
         return result
+
+
+def boxplot_compat_kwargs(
+    labels: list[str],
+    *,
+    horizontal: bool = True,
+    params: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """
+    Build Axes.boxplot kwargs compatible across matplotlib 3.7–3.11+.
+
+    Matplotlib renamed ``labels`` → ``tick_labels`` in 3.9 (``labels`` removed
+    in 3.11) and replaced ``vert=False`` with ``orientation='horizontal'`` in
+    3.10 (``vert`` deprecated in 3.11). Our declared floor is matplotlib>=3.7,
+    so callers must not hard-code the newest names.
+    """
+    if params is None:
+        from matplotlib.axes import Axes
+
+        params = inspect.signature(Axes.boxplot).parameters
+
+    kwargs: dict[str, Any] = {}
+    if horizontal:
+        if "orientation" in params:
+            kwargs["orientation"] = "horizontal"
+        else:
+            kwargs["vert"] = False
+    if "tick_labels" in params:
+        kwargs["tick_labels"] = labels
+    else:
+        kwargs["labels"] = labels
+    return kwargs
