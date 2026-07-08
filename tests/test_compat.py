@@ -2,16 +2,23 @@
 Tests for quantstats._compat module
 """
 
-import pytest
-import pandas as pd
+import inspect
+
+import matplotlib
 import numpy as np
+import pandas as pd
+import pytest
+
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
 
 from quantstats._compat import (
+    boxplot_compat_kwargs,
     get_frequency_alias,
     normalize_timezone,
-    safe_resample,
-    safe_concat,
     safe_append,
+    safe_concat,
+    safe_resample,
 )
 
 
@@ -131,3 +138,52 @@ class TestSafeAppend:
         df2 = pd.DataFrame({"A": [4, 5, 6]})
         result = safe_append(df1, df2, ignore_index=True)
         assert list(result.index) == [0, 1, 2, 3, 4, 5]
+
+
+class TestBoxplotCompatKwargs:
+    """Test matplotlib boxplot kwargs across supported versions."""
+
+    def test_current_matplotlib_uses_supported_names(self):
+        """Kwargs must match the installed Axes.boxplot signature."""
+        params = inspect.signature(plt.Axes.boxplot).parameters
+        kwargs = boxplot_compat_kwargs(["A", "B"], horizontal=True)
+        for key in kwargs:
+            assert key in params
+
+    def test_legacy_matplotlib_uses_vert_and_labels(self):
+        """Simulate matplotlib <3.9 / <3.10 signatures."""
+        legacy = {"vert": None, "labels": None, "patch_artist": None}
+        kwargs = boxplot_compat_kwargs(
+            ["A", "B"], horizontal=True, params=legacy
+        )
+        assert kwargs == {"vert": False, "labels": ["A", "B"]}
+
+    def test_modern_matplotlib_uses_orientation_and_tick_labels(self):
+        """Simulate matplotlib 3.10+ signatures."""
+        modern = {
+            "orientation": "vertical",
+            "tick_labels": None,
+            "patch_artist": None,
+        }
+        kwargs = boxplot_compat_kwargs(
+            ["A", "B"], horizontal=True, params=modern
+        )
+        assert kwargs == {
+            "orientation": "horizontal",
+            "tick_labels": ["A", "B"],
+        }
+
+    def test_horizontal_boxplot_renders(self):
+        """Regression: maxdd_distribution_figure path must not TypeError."""
+        fig, ax = plt.subplots()
+        try:
+            bp = ax.boxplot(
+                [[-5.0, -10.0, -15.0], [-2.0, -8.0, -20.0]],
+                patch_artist=True,
+                showfliers=False,
+                **boxplot_compat_kwargs(["A", "B"], horizontal=True),
+            )
+            assert "boxes" in bp
+            assert len(bp["boxes"]) == 2
+        finally:
+            plt.close(fig)
