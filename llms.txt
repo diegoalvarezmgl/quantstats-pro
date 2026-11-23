@@ -1,0 +1,17 @@
+# QuantStats Pro
+
+> Python library for portfolio analytics and backtest validation. Drop-in replacement for QuantStats (`pip install quantstats-pro`, `import quantstats as qs`). Takes a series of simple per-period returns and produces performance metrics, HTML tearsheets, forward simulations, drift monitoring and statistical tests of whether a backtest is overfit. Structured JSON output and a CLI are provided for AI agents.
+
+Inputs are simple returns as fractions (0.01 = +1%) in a pandas Series with a DatetimeIndex, not prices. The agent guide below is also available offline with `python -m quantstats guide`.
+
+## Docs
+
+- [Agent guide](https://github.com/diegoalvarezmgl/quantstats-pro/blob/main/quantstats/AGENT_GUIDE.md): input contract, which call answers which question, how to read and report results, CLI reference
+- [README](https://github.com/diegoalvarezmgl/quantstats-pro/blob/main/README.md): overview, install, tearsheet gallery
+- [Backtest validity](https://github.com/diegoalvarezmgl/quantstats-pro/blob/main/docs/validity.md): deflated Sharpe, minimum track record, bootstrap intervals, in/out-of-sample, alpha decay, probability of backtest overfitting
+- [Montecarlo engine](https://github.com/diegoalvarezmgl/quantstats-pro/blob/main/docs/montecarlo.md): multi-model forward simulation
+- [Alpha decay monitor](https://github.com/diegoalvarezmgl/quantstats-pro/blob/main/docs/alphadecay.md): rolling drift diagnostics and CUSUM
+
+## Optional
+
+- [Changelog](https://github.com/diegoalvarezmgl/quantstats-pro/blob/main/CHANGELOG.md)

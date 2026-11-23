@@ -1661,6 +1661,8 @@ def html_alpha_decay(
     match_dates=True,
     cusum_k=0.5,
     cusum_h=4.0,
+    benchmark=None,
+    baseline=0.5,
     **kwargs,
 ):
     """
@@ -1690,6 +1692,12 @@ def html_alpha_decay(
         CUSUM slack parameter in units of return standard deviation.
     cusum_h : float, default 4.0
         CUSUM alarm threshold in units of return standard deviation.
+    benchmark : pd.Series, optional
+        Benchmark returns. When given, the monitor runs on the active stream
+        ``r − β·benchmark`` (alpha) instead of total returns.
+    baseline : float or None, default 0.5
+        Leading fraction of the sample used as the reference period for the
+        CUSUM target and β. ``None`` uses the whole sample (pre-0.5.0).
     """
     import matplotlib.pyplot as _plt
 
@@ -1724,7 +1732,10 @@ def html_alpha_decay(
         cusum_k=cusum_k,
         cusum_h=cusum_h,
         asset_label=str(asset_title),
+        benchmark=benchmark,
+        baseline=baseline,
     )
+    returns = result.returns
 
     def _embed(fig):
         figfile = _get_utils()._file_stream()
@@ -1757,7 +1768,17 @@ def html_alpha_decay(
         f"Assumptions: windows {windows_label}d &bull; "
         f"{len(result.metrics)} metrics &bull; "
         f"CUSUM k={cusum_k}σ h={cusum_h}σ &bull; "
-        f"periods/year={periods_per_year} &bull; rf={rf:.2%}"
+        f"periods/year={periods_per_year} &bull; rf={rf:.2%} &bull; "
+        + (
+            "reference: full sample"
+            if baseline is None
+            else f"reference: first {baseline:.0%} of sample"
+        )
+        + (
+            f" &bull; benchmark removed (β={result.beta:.2f})"
+            if result.beta is not None
+            else ""
+        )
     )
 
     fragments = {
@@ -1792,6 +1813,104 @@ def html_alpha_decay(
 
     with open(output, "w", encoding="utf-8") as f:
         f.write(rendered)
+
+
+def html_validity(
+    returns,
+    benchmark=None,
+    n_trials=None,
+    trials=None,
+    split=None,
+    rf=0.0,
+    title="Backtest Validity Tearsheet",
+    output=None,
+    periods_per_year=None,
+    confidence=0.95,
+    n_boot=2000,
+    seed=0,
+    download_filename="quantstats-validity.html",
+    figfmt="svg",
+    template_path=None,
+    **kwargs,
+):
+    """
+    Generate a backtest-validity HTML tearsheet: how much of the performance
+    of a backtest is statistically credible.
+
+    Covers the probabilistic and deflated Sharpe ratio, minimum track record
+    length, bootstrap confidence intervals, in-sample vs out-of-sample
+    comparison, alpha / alpha-decay trend and, when ``trials`` is given, the
+    probability of backtest overfitting. See :func:`quantstats.validity.validate`
+    for the underlying analysis and the meaning of each argument.
+
+    Parameters
+    ----------
+    returns : pd.Series
+        Simple per-period returns of the strategy (prices are rejected).
+    benchmark : pd.Series, optional
+        Benchmark simple returns. Unlike the other tearsheets a ticker string
+        is not accepted: nothing is downloaded.
+    n_trials : int, optional
+        Number of strategy variants tried before selecting this one.
+    trials : pd.DataFrame, optional
+        Returns of every variant tried, one column each (enables PBO).
+    split : date-like or float, optional
+        First out-of-sample date, or out-of-sample fraction (0.3 = last 30%).
+    rf : float, default 0.0
+        Annual risk-free rate.
+    output : str or None, default None
+        Output file path. If None, opens in browser / downloads in notebook.
+    periods_per_year : float, optional
+        Observations per year; inferred from the index when omitted.
+    confidence : float, default 0.95
+    n_boot : int, default 2000
+    seed : int or None, default 0
+
+    Returns
+    -------
+    quantstats.validity.ValidityResult
+        The analysis behind the report (``.to_dict()``, ``.findings``).
+    """
+    from . import validity as _validity
+    from .validity import report as _vreport
+
+    if isinstance(benchmark, str):
+        raise ValueError(
+            "html_validity does not download data. Pass benchmark returns as a "
+            f"Series, e.g. qs.utils.download_returns({benchmark!r})."
+        )
+    result = _validity.validate(
+        returns,
+        benchmark,
+        n_trials=n_trials,
+        trials=trials,
+        split=split,
+        periods=periods_per_year,
+        rf=rf,
+        confidence=confidence,
+        n_boot=n_boot,
+        seed=seed,
+        label=kwargs.get("strategy_title"),
+    )
+    rendered = _vreport.render_html(
+        result, title=title, figfmt=figfmt, template_path=template_path
+    )
+
+    if output is None:
+        if _get_utils()._in_notebook():
+            _download_html(rendered, download_filename)
+        else:
+            with tempfile.NamedTemporaryFile(
+                mode="w", suffix=".html", delete=False, encoding="utf-8"
+            ) as f:
+                f.write(rendered)
+                temp_path = f.name
+            webbrowser.open("file://" + temp_path)
+        return result
+
+    with open(output, "w", encoding="utf-8") as f:
+        f.write(rendered)
+    return result
 
 
 def full(

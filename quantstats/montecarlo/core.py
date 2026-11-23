@@ -24,7 +24,7 @@ def infer_periods_per_year(returns: pd.Series) -> float:
     """
     idx = returns.index
     if isinstance(idx, pd.DatetimeIndex) and len(idx) > 0:
-        weekend = idx.dayofweek >= 5
+        weekend = idx.day_of_week >= 5
         if float(weekend.mean()) > 0.05:
             return 365.0
     return 252.0

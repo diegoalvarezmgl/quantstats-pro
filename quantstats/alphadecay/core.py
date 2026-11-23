@@ -293,6 +293,7 @@ class CusumResult:
     pct_of_threshold: float
     target_mean: float
     sigma: float
+    baseline_end: int | None = None  # observations used as reference (None = all)
 
 
 @dataclass
@@ -320,10 +321,65 @@ class DecayResult:
     cusum: CusumResult
     time_underwater: TimeUnderwaterResult
     asset_label: str = "Asset"
+    beta: float | None = None  # set when a benchmark was removed from returns
 
     @property
     def score_pct(self) -> float:
         return 100.0 * self.score / self.total if self.total else 0.0
+
+    def to_dict(self) -> dict:
+        """Plain, JSON-serialisable summary (no arrays; NaN becomes null)."""
+
+        def num(x):
+            x = float(x)
+            return x if np.isfinite(x) else None
+
+        metrics = {}
+        for mr in self.metrics:
+            metrics[mr.spec.key] = {
+                "label": mr.spec.label,
+                "higher_is_better": mr.spec.higher_is_better,
+                "windows": {
+                    str(w): {
+                        "observed": num(wr.observed),
+                        "reference_mean": num(wr.mean),
+                        "z_score": num(wr.z_score),
+                        "percentile": num(wr.percentile),
+                        "status": wr.status,
+                    }
+                    for w, wr in mr.windows.items()
+                },
+            }
+        tuw = self.time_underwater
+        idx = self.returns.index
+        dated = isinstance(idx, pd.DatetimeIndex) and len(idx) > 0
+        return {
+            "label": self.asset_label,
+            "n": int(len(self.returns)),
+            "start": idx[0].isoformat() if dated else None,
+            "end": idx[-1].isoformat() if dated else None,
+            "windows": [int(w) for w in self.windows],
+            "benchmark_beta": None if self.beta is None else num(self.beta),
+            "health": {
+                "score": int(self.score),
+                "total": int(self.total),
+                "score_pct": num(self.score_pct),
+            },
+            "metrics": metrics,
+            "cusum": {
+                "alarm": bool(self.cusum.alarm),
+                "pct_of_threshold": num(self.cusum.pct_of_threshold),
+                "target_mean": num(self.cusum.target_mean),
+                "baseline_observations": self.cusum.baseline_end,
+            },
+            "time_underwater": {
+                "is_underwater": bool(tuw.is_underwater),
+                "current_days": int(tuw.current_days),
+                "mean_completed_days": num(tuw.mean),
+                "z_score": num(tuw.z_score),
+                "status": tuw.status,
+            },
+        }
 
 
 def _rolling_metrics_matrix(
@@ -465,16 +521,23 @@ def _window_result(
 
     observed = float(clean[-1])
     dist = clean
-    mean = float(np.mean(dist))
-    std = float(np.std(dist, ddof=1)) if len(dist) > 1 else 0.0
+    # The latest window shares observations with the `window - 1` rolling
+    # values before it. Leave those (and itself) out of the reference, so the
+    # current reading is judged against history it is not part of.
+    ref_end = len(clean) - window if len(clean) >= 2 * window + 2 else len(clean) - 1
+    ref_end = max(ref_end, 1)
+    ref = dist[:ref_end]
+    mean = float(np.mean(ref))
+    std = float(np.std(ref, ddof=1)) if len(ref) > 1 else 0.0
 
     tdist = _transform_values(dist, spec.transform)
     tobs = float(tdist[-1])
-    tmean = float(np.mean(tdist))
-    tstd = float(np.std(tdist, ddof=1)) if len(tdist) > 1 else 0.0
+    tref = tdist[:ref_end]
+    tmean = float(np.mean(tref))
+    tstd = float(np.std(tref, ddof=1)) if len(tref) > 1 else 0.0
     z = (tobs - tmean) / tstd if tstd > 0 else 0.0
     status = _classify_status(z, spec.higher_is_better)
-    pct = float((tdist <= tobs).mean() * 100.0)
+    pct = float((tref <= tobs).mean() * 100.0)
     if not spec.higher_is_better:
         pct = 100.0 - pct
     return WindowResult(
@@ -496,14 +559,19 @@ def _compute_cusum(
     returns: pd.Series,
     k: float = 0.5,
     h: float = 4.0,
+    baseline_n: int | None = None,
 ) -> CusumResult:
     """
     One-sided CUSUM for detecting sustained *negative* shifts in daily returns.
 
+    The target mean and σ come from the first ``baseline_n`` observations (the
+    reference period); with ``baseline_n=None`` they come from the whole
+    sample, which lets a decayed strategy drag its own target down.
+
     For each trading day t (x-axis index 0 … N−1):
 
-        μ = mean(all daily returns)
-        σ = std(all daily returns, ddof=1)
+        μ = mean(reference daily returns)
+        σ = std(reference daily returns, ddof=1)
         k_abs = k · σ          # slack — ignore small daily shortfalls
         threshold = h · σ      # alarm line on the chart
 
@@ -520,8 +588,9 @@ def _compute_cusum(
     as the sample period), not calendar time.
     """
     arr = returns.to_numpy(dtype=float)
-    mu = float(np.mean(arr))
-    sigma = float(np.std(arr, ddof=1))
+    ref = arr if baseline_n is None else arr[: max(2, int(baseline_n))]
+    mu = float(np.mean(ref))
+    sigma = float(np.std(ref, ddof=1))
     if sigma == 0:
         sigma = 1e-12
     k_abs = k * sigma
@@ -544,6 +613,7 @@ def _compute_cusum(
         pct_of_threshold=pct,
         target_mean=mu,
         sigma=sigma,
+        baseline_end=None if baseline_n is None else int(len(ref)),
     )
 
 
@@ -651,6 +721,8 @@ def analyze(
     cusum_k: float = 0.5,
     cusum_h: float = 4.0,
     asset_label: str | None = None,
+    benchmark: pd.Series | None = None,
+    baseline: float | None = 0.5,
 ) -> DecayResult:
     """
     Run alpha-decay analysis on a return series.
@@ -658,10 +730,35 @@ def analyze(
     Computes rolling risk metrics for each window size, compares the latest
     observation against the historical distribution (z-score / traffic light),
     and adds CUSUM + time-underwater diagnostics.
+
+    Parameters
+    ----------
+    benchmark : pd.Series, optional
+        Benchmark returns. When given, the analysis runs on the *active*
+        stream ``r − β·benchmark`` (β estimated on the reference period), so
+        the monitor tracks alpha rather than total performance.
+    baseline : float or None, default 0.5
+        Leading fraction of the sample used as the reference period for the
+        CUSUM target (and for β). ``None`` uses the whole sample, which was
+        the behaviour before 0.5.0.
     """
     if isinstance(returns, pd.DataFrame):
         returns = returns.iloc[:, 0]
     returns = returns.dropna()
+    if baseline is not None and not 0 < baseline < 1:
+        raise ValueError(f"baseline must be a fraction in (0, 1) or None, got {baseline}")
+
+    beta = None
+    if benchmark is not None:
+        if isinstance(benchmark, pd.DataFrame):
+            benchmark = benchmark.iloc[:, 0]
+        name = returns.name
+        frame = pd.concat([returns.rename("r"), benchmark.rename("b")], axis=1).dropna()
+        ref_n = len(frame) if baseline is None else max(2, int(len(frame) * baseline))
+        ref = frame.iloc[:ref_n]
+        var_b = float(ref["b"].var())
+        beta = float(ref["r"].cov(ref["b"]) / var_b) if var_b > 0 else 0.0
+        returns = (frame["r"] - beta * frame["b"]).rename(name)
     if len(returns) < max(windows) + 5:
         raise ValueError(
             f"Need at least {max(windows) + 5} return observations, got {len(returns)}"
@@ -686,7 +783,8 @@ def analyze(
                 score += 1
         metrics.append(mr)
 
-    cusum = _compute_cusum(returns, k=cusum_k, h=cusum_h)
+    baseline_n = None if baseline is None else max(2, int(len(returns) * baseline))
+    cusum = _compute_cusum(returns, k=cusum_k, h=cusum_h, baseline_n=baseline_n)
     tuw = _compute_time_underwater(returns)
 
     return DecayResult(
@@ -698,6 +796,7 @@ def analyze(
         cusum=cusum,
         time_underwater=tuw,
         asset_label=str(label),
+        beta=beta,
     )
 
 

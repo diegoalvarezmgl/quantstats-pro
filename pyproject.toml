@@ -70,6 +70,9 @@ plotly = [
     "plotly>=5.0.0",
 ]
 
+[project.scripts]
+quantstats = "quantstats.cli:main"
+
 [project.urls]
 Homepage = "https://github.com/diegoalvarezmgl/quantstats-pro"
 Documentation = "https://github.com/diegoalvarezmgl/quantstats-pro"
@@ -85,6 +88,7 @@ pattern = 'version = "(?P<version>[^"]+)"'
 include = [
     "/quantstats",
     "/README.md",
+    "/llms.txt",
     "/CHANGELOG.md",
     "/LICENSE.txt",
 ]

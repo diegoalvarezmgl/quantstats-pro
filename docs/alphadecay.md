@@ -60,6 +60,30 @@ The tearsheet includes:
 Z-scores are computed on a per-metric **analysis scale** (log / log-severity
 transforms for skewed metrics) so traffic lights are statistically meaningful.
 
+The reference distribution for each cell excludes the rolling values that
+overlap the current window, so the latest reading is not compared with itself.
+
+## Reference period and benchmark (0.5.0+)
+
+```python
+result = analyze(returns, benchmark=bench, baseline=0.5, windows=(21, 63, 126))
+result.to_dict()   # JSON-serialisable summary
+```
+
+- `baseline` — leading fraction of the sample used as the reference period for
+  the CUSUM target mean and σ (default `0.5`). `None` uses the full sample
+  (behaviour before 0.5.0), which lets a decayed strategy lower its own target.
+- `benchmark` — benchmark returns. The monitor then runs on the active stream
+  `r − β·benchmark` (β estimated on the reference period), so it tracks alpha
+  instead of total performance.
+- With 10 metrics × 3 windows, a few Warning cells are expected by chance.
+  Look for clusters that persist. The CUSUM chart is a visual aid: with the
+  default `k`/`h` its alarm flag has little power on daily returns. Windows of 7–15 days are noisy;
+  `(21, 63, 126)` is a steadier choice for daily data.
+
+For a formal test of whether alpha is trending down, see
+[Backtest validity](validity.md) (`validity.decay_analysis`).
+
 ## Traffic lights
 
 | Status | Meaning |
