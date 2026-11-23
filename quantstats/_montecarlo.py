@@ -176,9 +176,7 @@ class MonteCarloResult:
         """
         return self.data.quantile(p / 100, axis=1)
 
-    def confidence_band(
-        self, level: float = 0.95
-    ) -> tuple[pd.Series, pd.Series]:
+    def confidence_band(self, level: float = 0.95) -> tuple[pd.Series, pd.Series]:
         """
         Get lower and upper bounds for a confidence interval.
 

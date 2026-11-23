@@ -1,6 +1,25 @@
 Changelog
 ===========
 
+0.5.0
+-----
+
+**Upstream sync (QuantStats 0.0.82 – 0.0.86)**
+
+- Merged upstream's statistical corrections. Numbers that change:
+
+  - ``probabilistic_sharpe_ratio`` and related: excess kurtosis was reduced by
+    3 a second time, ``rf`` was subtracted in the wrong units, and
+    ``annualize=True`` multiplied a probability by √252 (now ignored).
+  - ``cvar`` / ``expected_shortfall``: consistent parametric (default) and
+    ``method="historical"`` estimators; no longer falls back to VaR.
+  - ``rar``: ``rf`` is de-annualised (any non-zero ``rf`` used to return −100%).
+  - Benchmark statistics on gapped series, rolling alpha, time-varying ``rf``
+    cache key, Series/DataFrame cache collision.
+
+- **Minimum pandas is now 2.0** (was 1.5), following upstream.
+- ``rar`` keeps Pro's ``periods``-aware CAGR alongside upstream's ``compounded``.
+
 0.4.5
 -----
 
@@ -242,6 +261,220 @@ QuantStats Pro is an enhanced, actively maintained drop-in replacement:
 - Import unchanged: `import quantstats as qs`
 - 125 tests passing
 - Apache 2.0 license with attribution to original author
+0.0.86
+------
+
+**Statistical corrections** - these change reported numbers.
+
+- Fixed trade statistics on a DataFrame depending on the *other* columns in
+  the frame (#556). `avg_return()`, `avg_win()` and `avg_loss()` masked the
+  unselected cells to `NaN` and then called `.dropna()`, which drops whole
+  **rows** on a DataFrame. Each column's average was therefore computed only
+  over rows where every other column also qualified, so a strategy's average
+  win was measured only on days the benchmark also rose. Anyone calling
+  `reports.metrics()` with a benchmark on a DataFrame got affected figures
+  for Average Win/Loss, Payoff Ratio, Win/Loss Ratio, CPC Index and Kelly
+  Criterion. `.mean()` already skips `NaN` column-wise, so the `.dropna()`
+  is gone.
+- Fixed `rolling_greeks()` computing alpha from the full-sample means rather
+  than each window's own means (#554, reported with a fix by @WatchTree-19).
+  Every window shared one baseline, so rolling alpha only moved when rolling
+  beta did: on a strategy that starts earning an extra 10bp a day halfway
+  through, alpha read 0.00057 before and 0.00056 after, where a regression
+  on those windows gives 0.00035 and 0.00198. Rolling beta, and the
+  beta-only rolling plots, are unchanged.
+- Fixed a time-varying `rf` Series colliding in the `_prepare_returns()`
+  cache (#555, reported with a fix by @WatchTree-19). The key formatted `rf`
+  with its repr, which pandas truncates to the first and last few rows, so
+  two rate series of the same length differing only in between shared an
+  entry and the second caller was handed the first one's excess returns.
+  The result depended on call order. A Series `rf` is now hashed like the
+  data.
+
+0.0.85
+------
+
+- Fixed `rar()` charging the **annual** risk-free rate once per period
+  (#552). It passed `rf` to `_prepare_returns()` without `periods`, so at a
+  daily frequency a 5% rate was subtracted from every single day: the series
+  was wiped out and the Risk-Adjusted Return pinned to -100% for any
+  non-zero `rf`. `rar()` now takes a `periods` argument (default 252) and
+  de-annualizes the rate, and `reports.metrics()` passes the report's own
+  `periods_per_year` through.
+
+  This was the second half of #552, which 0.0.84 did not address. 0.0.81
+  reported a plausible number here only because `metrics()` never passed
+  `rf` into `rar()` at all; the standalone `stats.rar(returns, rf=0.05)`
+  call has been wrong in every release that had it. On a sample series the
+  row now reads 0.37 against 0.44 gross, where 0.0.82-0.0.84 read -1.00.
+
+0.0.84
+------
+
+**Fixes a regression introduced in 0.0.83.**
+
+- Fixed `greeks()`, `r_squared()`/`r2()` and `treynor_ratio()` collapsing to
+  zero or `NaN` when the strategy or benchmark had even one missing
+  observation (#553, reported with a fix by @WatchTree-19). 0.0.83 stopped
+  filling gaps with 0, and `np.cov`/`linregress` propagate `NaN` through the
+  whole estimate, so a single absent day reduced beta and alpha to 0 and
+  R-squared to `NaN` — and `greeks()` reported that zero without complaint.
+  These are now estimated over the dates on which both series were observed.
+  `reports.metrics()` was not affected, as it fills the frame beforehand.
+
+**Reverted**
+
+- `kelly_criterion()` returns the classic fixed-odds fraction `p - q/b`
+  again, as it did up to 0.0.81 (#552). 0.0.82 divided it by the average-loss
+  magnitude, on the argument that a fraction which does not move when the
+  series is rescaled must be wrong. That quantity is the growth-optimal
+  *leverage* for a per-period P&L, not the Kelly fraction: on daily returns
+  it reaches double and triple digits, and reports showed figures like
+  10792% where the fraction reads 21%. The fixed-odds fraction depends only
+  on the odds by construction, so its scale-invariance is a property rather
+  than a defect.
+
+0.0.83
+------
+
+**Statistical corrections** - these change reported numbers.
+
+- Fixed `rolling_sharpe()` and `rolling_sortino()` de-annualizing the
+  risk-free rate over the rolling window instead of the year (#549). They
+  passed `rolling_period` where `_prepare_returns()` expects
+  `periods_per_year`, so at the defaults they subtracted **exactly twice**
+  the correct risk-free rate. Any call with a non-zero `rf` was affected.
+- **Missing observations are no longer treated as 0.0 returns** (#546).
+  `_prepare_returns()` filled gaps with zero, asserting the strategy was flat
+  on days it had no data for, which understated volatility, softened
+  drawdowns and inflated every ratio built on them. Gaps now stay `NaN` and
+  are skipped by the statistics; equity curves still carry through a gap as
+  flat, because a curve has to have a value there.
+
+  Metrics that counted periods were corrected to count *observed* periods:
+  `cagr()`, `win_rate()`, `sortino()`, `ghpr()`, `exposure()`,
+  `risk_of_ruin()` and `autocorr_penalty()`. `win_rate()` was the worst of
+  these, since `NaN != 0` is true and gaps were landing in its denominator.
+- Fixed `conditional_value_at_risk()` mixing estimators (#547). It took a
+  *parametric* VaR threshold and then averaged the observations below it, and
+  returned the VaR itself when none fell below - which overstates CVaR, since
+  CVaR is by definition at least as severe as VaR. Small samples also emitted
+  `RuntimeWarning: Mean of empty slice`.
+
+  The default is now the closed-form normal expected shortfall, consistent
+  with `value_at_risk()`. Pass `method="historical"` for the empirical tail,
+  which captures fat tails but needs enough data to mean anything. An
+  undefined tail returns `NaN` rather than the VaR.
+
+**Documentation**
+
+- The trade-derived metrics (`win_rate`, `payoff_ratio`, `profit_factor`,
+  `consecutive_wins`/`losses`, `common_sense_ratio`, `cpc_index`,
+  `gain_to_pain_ratio`, `outliers` and friends) now carry the period-based
+  caveat in their docstrings, so it is visible from `help()` and in editors
+  rather than only in the README (#493).
+- Corrected the stale `help()` example in the README.
+
+0.0.82
+------
+
+**Correctness fixes**
+
+- Fixed `max_drawdown()` and `to_drawdown_series()` returning drawdowns that
+  depended on the price level of the input (#541). The baseline is now taken
+  from whether the series was rebuilt from returns or was a real price series,
+  instead of guessing from magnitude thresholds. A price series scaled by any
+  constant now reports the same drawdown.
+- Fixed `_prepare_prices()` filling a missing price with `0`, which reported a
+  spurious -100% drawdown for any gapped price series (#545). Gaps now carry
+  the last known price forward.
+- Fixed weekly aggregation raising `AttributeError: 'DatetimeIndex' object has
+  no attribute 'week'` on pandas >= 2.0 (#533). `aggregate_returns()` now uses
+  `isocalendar().week` for the `"week"`, `"eow"` and `"W"` periods.
+- Fixed `cagr(compounded=False)` turning a loss worse than -100% into a
+  positive return (#548). Terminal wealth at or below zero now yields `NaN`
+  rather than a value produced by taking a root of a negative number.
+- Fixed the prepared-returns cache returning a DataFrame to a caller that
+  passed a Series (#544). Container type, column names, dtypes and the
+  risk-free flag are now part of the cache key.
+- Fixed `information_ratio()` preparing the benchmark twice, which re-ran
+  price/return detection on already-normalized data.
+- Fixed `rolling_volatility()` passing its rolling period into the risk-free
+  rate argument.
+
+**Statistical corrections**
+
+- Fixed `probabilistic_sharpe_ratio()` / `probabilistic_ratio()` (#551):
+  the raw-kurtosis formula was being fed excess kurtosis, the estimator
+  standard error now follows Bailey & Lopez de Prado, and `rf` is routed into
+  the underlying Sharpe/Sortino rather than dropped. The `annualize` argument
+  is documented as inert; it never affected the result.
+- **Behavior change:** `kelly_criterion()` now divides by the average loss,
+  giving the position size the Kelly formula actually defines. The previous
+  result was scale-invariant and therefore dimensionally wrong; returned
+  values will differ in magnitude from 0.0.81 and earlier.
+- `autocorr_penalty()` now guards against series shorter than two
+  observations and zero-variance input instead of emitting a numpy
+  `RuntimeWarning` and propagating `NaN` (#525).
+
+**API**
+
+- `calmar()` and `rar()` accept a `compounded` flag (#512), and
+  `reports.metrics()` threads its own `compounded` setting into both.
+- Report risk-free rates may now be a `pd.Series` of time-varying rates
+  (#524). Rates are aligned onto the return dates, carried forward across
+  gaps, and subtracted row-wise for DataFrame input. The reported
+  "Risk-Free Rate" row shows the average over the period.
+- `reports.html()`, `reports.full()` and `reports.basic()` now forward
+  `match_dates` to `metrics()` (#536), so the table and the plots describe
+  the same date range.
+
+**Crash fixes**
+
+- Fixed `reports.metrics()` raising `UnboundLocalError` for a single-column
+  DataFrame.
+- Fixed `reports.html()` and `reports.full()` raising `TypeError` when given a
+  DataFrame together with a string `strategy_title`.
+- Fixed a `KeyError` in the drawdown table when the metrics frame came back
+  with a single-level MultiIndex.
+- `sharpe()`, `sortino()`, `rolling_sharpe()` and `rolling_sortino()` no
+  longer raise "truth value of a Series is ambiguous" when `rf` is a Series.
+
+**Compatibility**
+
+- Fixed `ValueError: Invalid frequency: ME` on pandas 2.0 and 2.1. The
+  codebase spells frequencies the pandas 2.2 way (`ME`/`QE`/`YE`), which
+  older versions reject; the compatibility layer now translates aliases in
+  both directions. Reports and plots were unusable on those versions.
+- Raised the declared pandas floor from `>=1.5.0` to `>=2.0.0` to match what
+  is actually supported and tested. pandas 1.5 never worked with recent
+  releases.
+
+**Reports**
+
+- Fixed the "10Y (ann.)" column covering eleven calendar years (#523).
+
+**Internals**
+
+- `_prepare_returns()` no longer inspects the call stack (`inspect.stack()`)
+  to decide whether to apply the risk-free rate; callers pass an explicit
+  `apply_rf` argument.
+
+**CI**
+
+- Repaired the test workflow, which was disabled and pointed at
+  `test_fixes.py` and `tests/test_compatibility.py` (#540) - neither file has
+  existed for several releases. It now runs `pytest tests/` across a
+  Python 3.10-3.13 x pandas x numpy matrix, plus a latest-versions job and a
+  ruff lint job.
+- Repaired the publish workflow, which still called `python setup.py`;
+  `setup.py` was removed in 0.0.78 in favour of pyproject.toml + hatchling.
+- Bumped `actions/checkout` and `actions/setup-python` to v7 (#526, #534).
+- Removed the abandoned `.travis.yml` (Python 3.6-3.9, `nosetests`).
+- Added a regression test module covering every fix above.
+- Applied `ruff` autofixes and formatting across the codebase, and
+  grandfathered the remaining violations per file so lint is enforced on new
+  code.
 
 0.0.81
 ------

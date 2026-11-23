@@ -353,9 +353,8 @@ def _rolling_metrics_matrix(
     - max/mean drawdown: equity = cumprod(1+r) with a baseline of 1.0
       (matching ``to_drawdown_series``'s phantom start), running max, min/mean.
     - var_95: Gaussian VaR — norm.ppf(0.05, μ, σ) with sample moments.
-    - cvar_95: mean of returns strictly below VaR; falls back to VaR when no
-      return is below it (this also removes the "Mean of empty slice"
-      RuntimeWarning the old path emitted thousands of times).
+    - cvar_95: Gaussian expected shortfall μ − σ·φ(z)/α, matching
+      ``stats.cvar(method="parametric")``.
     - win_rate: wins / non-zero returns (0.0 when no non-zero returns).
     - payoff_ratio: mean(wins) / |mean(losses)|; NaN when there are no losses.
     - skew: pandas' adjusted Fisher–Pearson estimator
@@ -397,13 +396,11 @@ def _rolling_metrics_matrix(
     out["win_rate"] = np.where(nonzero > 0, wins / np.maximum(nonzero, 1), 0.0)
 
     var = _norm.ppf(0.05, mu, std)
-    below = mat < var[:, None]
-    below_cnt = below.sum(axis=1)
-    below_sum = np.where(below, mat, 0.0).sum(axis=1)
     out["var_95"] = var
-    out["cvar_95"] = np.where(
-        below_cnt > 0, below_sum / np.maximum(below_cnt, 1), var
-    )
+    # Gaussian expected shortfall, same estimator as stats.cvar(parametric):
+    # μ − σ·φ(z_α)/α. Degenerate windows (σ = 0) collapse to μ.
+    es_k = _norm.pdf(_norm.ppf(0.05)) / 0.05
+    out["cvar_95"] = np.where(std > 0, mu - std * es_k, mu)
 
     pos_cnt = wins
     neg_cnt = (mat < 0).sum(axis=1)

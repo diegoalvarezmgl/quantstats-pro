@@ -29,3 +29,7 @@ CONTEXT.md
 .sandbox/
 san_alpha_decay.ipynb
 san_alpha_decay.html
+.claude/settings.local.json
+
+# Environment files (may contain secrets)
+.env
