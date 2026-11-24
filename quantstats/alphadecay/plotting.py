@@ -24,13 +24,13 @@ from .core import (
     transform_axis_label,
 )
 
-_EXCELLENT = "#2e7d32"
-_GOOD = "#689f38"
-_WARNING = "#f9a825"
-_CRITICAL = "#c62828"
-_PRIMARY = "#348dc1"
-_MEDIAN = "#c1431d"
-_ACCENT = "#003366"
+_EXCELLENT = "#14171a"
+_GOOD = "#14171a"
+_WARNING = "#b97f00"
+_CRITICAL = "#c8321e"
+_PRIMARY = "#9aa1a8"
+_MEDIAN = "#5c646c"
+_ACCENT = "#14171a"
 
 _STATUS_COLORS = {
     "excellent": _EXCELLENT,
@@ -136,9 +136,9 @@ def cusum_figure(
     ax.set_facecolor("white")
 
     x = np.arange(len(cusum.series))
-    ax.plot(x, cusum.series.to_numpy(), color=_PRIMARY, lw=1.4, label="CUSUM")
+    ax.plot(x, cusum.series.to_numpy(), color=_ACCENT, lw=1.4, label="CUSUM")
     ax.axhline(cusum.threshold, color=_CRITICAL, lw=1.2, ls="--", label=f"Threshold ({cusum.threshold:.4f})")
-    ax.fill_between(x, 0, cusum.threshold, color="#ffebee", alpha=0.3)
+    ax.fill_between(x, 0, cusum.threshold, color="#f1f2f0", alpha=0.3)
     if cusum.baseline_end is not None and 0 < cusum.baseline_end < len(x):
         ax.axvline(
             cusum.baseline_end, color="#9e9e9e", lw=1.0, ls=":", label="End of reference period"

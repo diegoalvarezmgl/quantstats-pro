@@ -381,8 +381,6 @@ def html(
     params_parts.append(f"RF: {rf:.1%}")
 
     params_str = " &bull; ".join(params_parts)
-    if params_str:
-        params_str += " | "
     tpl = tpl.replace("{{params}}", params_str)
 
     # Add matched dates indicator
@@ -952,8 +950,6 @@ def html_simple(
     params_parts.append(f"Periods/Year: {periods_per_year}")
     params_parts.append(f"RF: {rf:.1%}")
     params_str = " &bull; ".join(params_parts)
-    if params_str:
-        params_str += " | "
 
     matched_dates_str = (
         " (matched dates)" if match_dates and benchmark is not None else ""
@@ -1489,8 +1485,6 @@ def html_montecarlo(
     if drift != "historical":
         params_parts.append(f"Drift: {drift} (stress scenario)")
     params_str = " &bull; ".join(params_parts)
-    if params_str:
-        params_str += " | "
 
     seed_str = str(seed) if seed is not None else "random"
     assumptions = (
@@ -1554,7 +1548,8 @@ def _ad_status_counts_html(result):
         ("critical", "Critical"),
     ):
         parts.append(
-            f'<div class="kpi {key}"><div class="label">{label}</div>'
+            f'<div class="kpi {key if counts[key] else ""}">'
+            f'<div class="label">{label}</div>'
             f'<div class="value">{counts[key]}</div>'
             f'<div class="hint">{hints[key]}</div></div>'
         )
@@ -1790,7 +1785,7 @@ def html_alpha_decay(
         f"Asset: {str(asset_title).upper()}",
         f"Metrics: {len(result.metrics)}",
     ]
-    params_str = " &bull; ".join(params_parts) + " | "
+    params_str = " &bull; ".join(params_parts)
 
     score_tone = _ad_score_tone(result.score_pct)
     score_html = (

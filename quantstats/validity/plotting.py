@@ -12,19 +12,28 @@ import numpy as np
 
 from .core import ValidityResult
 
-_PRIMARY = "#348dc1"
-_CRITICAL = "#c62828"
-_GOOD = "#2e7d32"
-_MUTED = "#9e9e9e"
-_OOS_FILL = "#fff3e0"
+# Report palette: ink for the series, vermilion only for what fails.
+_PRIMARY = "#14171a"
+_CRITICAL = "#c8321e"
+_GOOD = "#14171a"
+_MUTED = "#5c646c"
+_RULE = "#d9dcde"
+_OOS_FILL = "#f1f2f0"
 
 
 def _new_axes(figsize: tuple[float, float]):
     fig, ax = plt.subplots(figsize=figsize)
     fig.set_facecolor("white")
     ax.set_facecolor("white")
-    ax.spines["top"].set_visible(False)
-    ax.spines["right"].set_visible(False)
+    for side in ("top", "right", "left"):
+        ax.spines[side].set_visible(False)
+    ax.spines["bottom"].set_color(_RULE)
+    ax.grid(False)
+    ax.tick_params(colors=_MUTED, labelsize=8.5, length=0)
+    ax.xaxis.label.set_color(_MUTED)
+    ax.yaxis.label.set_color(_MUTED)
+    ax.xaxis.label.set_size(9)
+    ax.yaxis.label.set_size(9)
     return fig, ax
 
 
@@ -44,10 +53,10 @@ def sharpe_distribution_figure(
         ax.text(0.5, 0.5, "Sharpe is undefined for this series", ha="center")
         ax.set_axis_off()
         return fig
-    ax.hist(samples, bins=50, color=_PRIMARY, alpha=0.55, edgecolor="white")
+    ax.hist(samples, bins=50, color=_MUTED, alpha=0.45, edgecolor="white")
     ci = result.bootstrap["sharpe"]
-    ax.axvspan(ci["low"], ci["high"], color=_PRIMARY, alpha=0.08)
-    ax.axvline(0, color="black", lw=1)
+    ax.axvspan(ci["low"], ci["high"], color=_OOS_FILL, alpha=1.0, zorder=0)
+    ax.axvline(0, color=_RULE, lw=1)
     ax.axvline(
         s["sharpe_annual"],
         color=_PRIMARY,
@@ -63,9 +72,6 @@ def sharpe_distribution_figure(
             label=f"Best of {s['n_trials']} skill-less trials "
             f"{s['sharpe_hurdle_annual']:.2f}",
         )
-    ax.set_title(
-        "Sharpe Ratio — Bootstrap Distribution", fontweight="bold", color="black", pad=8
-    )
     ax.set_xlabel(
         f"Annualised Sharpe (shaded: {result.bootstrap['confidence']:.0%} interval)"
     )
@@ -80,14 +86,17 @@ def equity_figure(result: ValidityResult, figsize: tuple[float, float] = (8, 3.0
     fig, ax = _new_axes(figsize)
     equity = (1.0 + result.returns).cumprod() - 1.0
     x = _x(result)
-    ax.plot(x, equity.to_numpy() * 100.0, color=_PRIMARY, lw=1.4)
-    ax.axhline(0, color="black", lw=0.8)
+    y = equity.to_numpy() * 100.0
+    ax.plot(x, y, color=_PRIMARY, lw=1.4)
+    ax.axhline(0, color=_RULE, lw=1)
     if result.split is not None:
         pos = result.split["split_position"]
-        ax.axvspan(x[pos], x[-1], color=_OOS_FILL, alpha=0.8, label="Out-of-sample")
-        ax.axvline(x[pos], color=_CRITICAL, lw=1.2, ls="--")
+        oos_sharpe = result.split["out_of_sample"]["sharpe_annual"]
+        if math.isfinite(oos_sharpe) and oos_sharpe <= 0:
+            ax.plot(x[pos:], y[pos:], color=_CRITICAL, lw=1.4)
+        ax.axvspan(x[pos], x[-1], color=_OOS_FILL, alpha=1.0, zorder=0, label="Out-of-sample")
+        ax.axvline(x[pos], color=_PRIMARY, lw=1.0)
         ax.legend(loc="upper left", frameon=False, fontsize=9)
-    ax.set_title("Cumulative Return", fontweight="bold", color="black", pad=8)
     ax.set_ylabel("Cumulative return (%)")
     fig.tight_layout()
     return fig
@@ -112,7 +121,7 @@ def rolling_edge_figure(
         lw=1.3,
         label=f"Rolling {d['window']}-period {name.lower()}",
     )
-    ax.axhline(0, color="black", lw=0.8)
+    ax.axhline(0, color=_RULE, lw=1)
 
     # Trend line from the time-trend regression, centred on the sample mean
     n = d["n"]
@@ -137,8 +146,7 @@ def rolling_edge_figure(
         )
     if result.split is not None:
         x = _x(result)
-        ax.axvline(x[result.split["split_position"]], color=_CRITICAL, lw=1.0, ls=":")
-    ax.set_title(f"{name} Over Time", fontweight="bold", color="black", pad=8)
+        ax.axvline(x[result.split["split_position"]], color=_PRIMARY, lw=0.8, ls=":")
     ax.set_ylabel(f"Annualised {name.lower()} (%)")
     ax.legend(loc="upper right", frameon=False, fontsize=9)
     fig.tight_layout()
@@ -155,15 +163,9 @@ def pbo_figure(result: ValidityResult, figsize: tuple[float, float] = (8, 3.0)):
     logits = over["logits"]
     lim = max(abs(float(logits.min())), abs(float(logits.max())), 1.0)
     bins = np.linspace(-lim, lim, 41)
-    ax.hist(logits[logits <= 0], bins=bins, color=_CRITICAL, alpha=0.6, edgecolor="white")
-    ax.hist(logits[logits > 0], bins=bins, color=_PRIMARY, alpha=0.6, edgecolor="white")
-    ax.axvline(0, color="black", lw=1)
-    ax.set_title(
-        f"Backtest Overfitting — PBO {over['pbo']:.0%}",
-        fontweight="bold",
-        color="black",
-        pad=8,
-    )
+    ax.hist(logits[logits <= 0], bins=bins, color=_CRITICAL, alpha=0.85, edgecolor="white")
+    ax.hist(logits[logits > 0], bins=bins, color=_MUTED, alpha=0.45, edgecolor="white")
+    ax.axvline(0, color=_RULE, lw=1)
     ax.set_xlabel(
         "Out-of-sample rank of the in-sample winner (logit; ≤ 0 = bottom half)"
     )
