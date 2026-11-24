@@ -107,13 +107,17 @@ Measured on simulated daily strategies (10 years, 9.5% active volatility,
 | --- | --- |
 | No change | 4–6% |
 | Alpha drops to −5%/year at 50–60% of the sample | 96–99% |
-| Alpha halves at 50% of the sample | 68% |
+| Alpha drops to 7.5%/year at 50% of the sample | 68% |
 | Alpha drops to −5%/year in the last 20% | 53% |
 | Alpha drops to −5%/year in the last 10% | 19% |
 
 Recent decay needs time to show. `ok` means no evidence so far, not that the
 edge is intact. With `baseline=None` or fewer than 30 observations on either
 side the test is not run (`status` is `no_reference` / `insufficient_data`).
+
+β is fitted on the reference period only. If the exposure to the benchmark
+changes afterwards, the monitored stream carries benchmark return and the
+verdict can be wrong in either direction.
 
 For the trend of alpha over time, see [Backtest validity](validity.md)
 (`validity.decay_analysis`).

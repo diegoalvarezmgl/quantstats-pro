@@ -1575,15 +1575,18 @@ def _ad_score_tone(score_pct: float) -> str:
 
 def _ad_edge_test_html(result):
     """Headline block: reference period vs everything after it."""
+    from html import escape as _esc
+
     et = result.edge_test
     if et is None:
         return ""
+    msg = _esc(et.message)
     noun = "alpha" if et.kind == "alpha" else "return"
     if et.status in ("no_reference", "insufficient_data"):
         return (
             '<div class="kpi-grid score-grid"><div class="kpi good">'
             '<div class="label">Edge Test</div><div class="value">Not run</div>'
-            f'<div class="hint">{et.message}</div></div></div>'
+            f'<div class="hint">{msg}</div></div></div>'
         )
     tone = {"ok": "excellent", "warning": "warning", "critical": "critical"}[et.status]
     verdict = {"ok": "No decay detected", "warning": "Decay likely", "critical": "Decay detected"}[et.status]
@@ -1591,7 +1594,7 @@ def _ad_edge_test_html(result):
         '<div class="kpi-grid score-grid">'
         f'<div class="kpi {tone}"><div class="label">Edge Test &mdash; reference period vs since</div>'
         f'<div class="value">{verdict}</div>'
-        f'<div class="hint">{et.message}</div></div></div>'
+        f'<div class="hint">{msg}</div></div></div>'
         '<div class="kpi-grid">'
         f'<div class="kpi good"><div class="label">Reference Sharpe</div>'
         f'<div class="value">{et.reference_sharpe_annual:.2f}</div>'
