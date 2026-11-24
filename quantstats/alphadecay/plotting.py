@@ -139,6 +139,10 @@ def cusum_figure(
     ax.plot(x, cusum.series.to_numpy(), color=_PRIMARY, lw=1.4, label="CUSUM")
     ax.axhline(cusum.threshold, color=_CRITICAL, lw=1.2, ls="--", label=f"Threshold ({cusum.threshold:.4f})")
     ax.fill_between(x, 0, cusum.threshold, color="#ffebee", alpha=0.3)
+    if cusum.baseline_end is not None and 0 < cusum.baseline_end < len(x):
+        ax.axvline(
+            cusum.baseline_end, color="#9e9e9e", lw=1.0, ls=":", label="End of reference period"
+        )
 
     status = "ALARM" if cusum.alarm else f"{cusum.pct_of_threshold:.0%} of threshold"
     ax.set_title(f"{title} — {status}", fontweight="bold", color="black", pad=8)

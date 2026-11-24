@@ -159,7 +159,8 @@ class TestTransforms:
         expected = _transform_values(wr.distribution, "log")
         assert np.allclose(wr.analysis_distribution, expected)
         assert wr.analysis_observed == expected[-1]
-        assert wr.analysis_mean == float(np.mean(expected))
+        # reference excludes the 15 rolling values that overlap the current window
+        assert wr.analysis_mean == float(np.mean(expected[:-15]))
 
     def test_time_underwater_analysis_scale(self, decay_returns):
         tuw = analyze(decay_returns).time_underwater
@@ -266,3 +267,58 @@ class TestVectorisedParity:
             np.testing.assert_allclose(
                 out[key], slow, rtol=1e-9, equal_nan=True, err_msg=key
             )
+
+
+class TestReferencePeriod:
+    """0.5.0: the reference must not contain the period being judged."""
+
+    @staticmethod
+    def _decaying(n=600, seed=0):
+        rng = np.random.default_rng(seed)
+        idx = pd.bdate_range("2020-01-01", periods=n)
+        half = n // 2
+        vals = np.r_[rng.normal(0.002, 0.01, half), rng.normal(-0.001, 0.01, n - half)]
+        return pd.Series(vals, index=idx, name="strat")
+
+    def test_cusum_baseline_is_more_sensitive_than_full_sample(self):
+        r = self._decaying()
+        ref = analyze(r, baseline=0.5).cusum
+        legacy = analyze(r, baseline=None).cusum
+        assert ref.baseline_end == 300
+        assert legacy.baseline_end is None
+        # the full-sample target is dragged down by the decayed half
+        assert ref.target_mean > legacy.target_mean
+        assert ref.series.max() > legacy.series.max()
+
+    def test_zscore_reference_excludes_current_window(self):
+        rng = np.random.default_rng(1)
+        idx = pd.bdate_range("2020-01-01", periods=400)
+        vals = rng.normal(0.0005, 0.01, 400)
+        vals[-30:] = rng.normal(0.0005, 0.05, 30)  # volatility shock at the end
+        res = analyze(pd.Series(vals, index=idx), windows=(30,))
+        wr = next(m for m in res.metrics if m.spec.key == "volatility").windows[30]
+        full_std = float(np.std(wr.analysis_distribution, ddof=1))
+        full_z = (wr.analysis_observed - float(np.mean(wr.analysis_distribution))) / full_std
+        assert wr.z_score > full_z > 0
+
+    def test_benchmark_removes_market_exposure(self):
+        rng = np.random.default_rng(2)
+        idx = pd.bdate_range("2020-01-01", periods=500)
+        bench = pd.Series(rng.normal(0.0004, 0.012, 500), index=idx)
+        strat = 1.5 * bench + rng.normal(0.0, 0.002, 500)
+        res = analyze(strat, benchmark=bench)
+        assert res.beta == pytest.approx(1.5, abs=0.05)
+        assert res.returns.std() < strat.std() / 3
+
+    def test_invalid_baseline(self):
+        with pytest.raises(ValueError, match="baseline"):
+            analyze(self._decaying(), baseline=1.5)
+
+    def test_to_dict_is_strict_json(self):
+        import json
+
+        d = analyze(self._decaying()).to_dict()
+        parsed = json.loads(json.dumps(d, allow_nan=False))
+        assert parsed["health"]["total"] == 30
+        assert parsed["cusum"]["baseline_observations"] == 300
+        assert set(parsed["metrics"]["volatility"]["windows"]) == {"7", "15", "30"}

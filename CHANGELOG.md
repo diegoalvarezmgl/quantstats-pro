@@ -4,6 +4,51 @@ Changelog
 0.5.0
 -----
 
+**Backtest validity (new)**
+
+- New ``quantstats.validity`` module and ``reports.html_validity()`` tearsheet:
+  how much of a backtest's performance is statistically credible.
+
+  - Probabilistic and **deflated Sharpe ratio** (``n_trials`` / ``trials``),
+    selection hurdle and **minimum track record length**.
+  - **Stationary-bootstrap confidence intervals** for Sharpe, CAGR, volatility
+    and max drawdown.
+  - **In-sample vs out-of-sample** comparison with a test for Sharpe degradation
+    (``split`` as a date or out-of-sample fraction).
+  - **Alpha and alpha-decay trend** against a benchmark, with Newey–West
+    standard errors (mean-return trend when no benchmark is given).
+  - **Probability of backtest overfitting** (CSCV) from the returns of every
+    variant tried.
+  - ``validate()`` returns a ``ValidityResult`` with ``findings`` (stable codes
+    with ``info`` / ``caution`` / ``warning`` severity), ``summary()`` and a
+    strict-JSON ``to_dict()``.
+
+**Agent-first interface (new)**
+
+- ``quantstats`` command-line tool (also ``python -m quantstats``) with
+  ``validate``, ``metrics``, ``decay``, ``montecarlo`` and ``report``
+  subcommands. Analysis commands read CSV/Parquet and print one JSON object;
+  errors are JSON on stderr; nothing opens a browser or downloads data.
+- ``quantstats guide`` prints ``AGENT_GUIDE.md``, a usage guide for AI agents
+  that ships inside the package (input contract, which call answers which
+  question, how to read and report results). ``llms.txt`` added at the repo root.
+- ``alphadecay.DecayResult.to_dict()`` for structured output.
+
+**Alpha decay — behaviour changes**
+
+- The CUSUM target mean and σ are now estimated on a **reference period** (the
+  first 50% of the sample by default, ``baseline=0.5``) instead of the full
+  sample, where a decayed strategy lowered its own target. Pass
+  ``baseline=None`` for the previous behaviour.
+- Z-scores, percentiles and the reported mean now use a reference distribution
+  that **excludes the rolling values overlapping the current window**, so the
+  latest reading is no longer part of the history it is compared with.
+- New ``benchmark=`` argument in ``alphadecay.analyze()`` and
+  ``reports.html_alpha_decay()``: the monitor runs on ``r − β·benchmark``
+  (alpha) instead of total returns.
+- Expected Shortfall in the monitor now uses the same Gaussian estimator as
+  ``stats.cvar()`` (see upstream sync below).
+
 **Upstream sync (QuantStats 0.0.82 – 0.0.86)**
 
 - Merged upstream's statistical corrections. Numbers that change:

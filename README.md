@@ -38,6 +38,9 @@ Same API surface, stronger foundation — bugfixes, reliability, and a growing a
 | `html_simple`           | Lean equity-curve tearsheet — fast read on performance vs benchmark                                                                  |
 | `html_montecarlo`       | Multi-model forward risk report (GBM, GARCH, Heston, bootstraps, Bayesian, …) with bust/goal probabilities and cross-model consensus |
 | `html_alpha_decay`      | Rolling alpha-decay monitor — z-score traffic lights, CUSUM, time-underwater, per-metric distribution charts                         |
+| `html_validity`         | **New in 0.5** — is the backtest real? Deflated Sharpe, minimum track record, bootstrap intervals, in/out-of-sample, alpha decay, PBO |
+| `quantstats.validity`   | Programmatic backtest-validity engine with structured findings and JSON output                                                       |
+| `quantstats` CLI        | **New in 0.5** — JSON-first command line and a packaged guide so AI agents use the library correctly                                 |
 | `quantstats.montecarlo` | Programmatic multi-model simulation engine behind the Montecarlo tearsheet                                                           |
 | `quantstats.alphadecay` | Short-horizon rolling diagnostics engine behind the Alpha Decay tearsheet                                                            |
 | Classic `html`          | Full tearsheet — metrics + all charts, visually redesigned (v0.2.0+)                                                                 |
@@ -53,6 +56,8 @@ Same API surface, stronger foundation — bugfixes, reliability, and a growing a
 | `quantstats.reports`    | HTML tearsheets and metrics tables                                         |
 | `quantstats.montecarlo` | Multi-model forward simulation engine and analytics                        |
 | `quantstats.alphadecay` | Short-horizon rolling risk analysis and decay detection                    |
+| `quantstats.validity`   | Backtest validity: overfitting, selection bias, out-of-sample, alpha decay |
+| `quantstats.cli`        | `quantstats` command line (JSON output) and the agent guide                |
 | `quantstats.utils`      | Data prep, `download_returns`, pandas helpers                              |
 
 
@@ -62,7 +67,7 @@ Legacy shuffle-based Montecarlo remains at `qs.stats.montecarlo()` for backward 
 
 ## HTML Tearsheets
 
-The main product surface in QuantStats Pro is its **reporting layer**: four HTML tearsheet types that turn a returns series into shareable, browser-ready analytics. All open in the browser by default, or save to disk with `output="path.html"`.
+The main product surface in QuantStats Pro is its **reporting layer**: five HTML tearsheet types that turn a returns series into shareable, browser-ready analytics. All open in the browser by default, or save to disk with `output="path.html"`.
 
 
 | Function                           | Use case                                                                 |
@@ -71,7 +76,27 @@ The main product surface in QuantStats Pro is its **reporting layer**: four HTML
 | `qs.reports.html_simple(...)`      | **Pro-only** — lean equity-curve tearsheet for quick strategy review     |
 | `qs.reports.html_montecarlo(...)`  | **Pro-only** — multi-model forward risk analysis (1y horizon by default) |
 | `qs.reports.html_alpha_decay(...)` | **Pro-only** — short-window alpha-decay health monitor (7/15/30d)        |
+| `qs.reports.html_validity(...)`    | **Pro-only** — backtest validity: selection bias, overfitting, decay     |
 
+
+### Backtest validity tearsheet — `html_validity`
+
+A Sharpe ratio from a backtest is an estimate, and usually the best of many attempts. This report measures how much of it survives: the **deflated Sharpe ratio** (discounted for the number of variants tried), the **minimum track record** needed, **bootstrap confidence intervals**, an **in-sample vs out-of-sample** comparison, an **alpha-decay** trend test and the **probability of backtest overfitting**.
+
+```python
+result = qs.reports.html_validity(
+    returns,
+    benchmark,             # returns Series (optional)
+    n_trials=50,           # strategy variants tried before choosing this one
+    split="2023-01-01",    # first out-of-sample date
+    output="validity.html",
+)
+print(result.summary())
+```
+
+![Backtest validity tearsheet — an overfit moving-average crossover](https://raw.githubusercontent.com/diegoalvarezmgl/quantstats-pro/main/docs/report_validity.webp)
+
+[View interactive validity sample](https://htmlpreview.github.io/?https://github.com/diegoalvarezmgl/quantstats-pro/blob/main/docs/tearsheet_validity.html) · [Backtest validity docs](https://github.com/diegoalvarezmgl/quantstats-pro/blob/main/docs/validity.md)
 
 ### Simple tearsheet — `html_simple`
 
@@ -164,6 +189,54 @@ qs.stats.sharpe(returns, periods=365)
 
 ---
 
+## Backtest Validity
+
+`quantstats.validity` returns structured results instead of a picture: numbers, the assumptions used, and a list of findings with stable codes.
+
+```python
+from quantstats import validity
+
+res = validity.validate(returns, benchmark, n_trials=50, split="2023-01-01")
+
+res.sharpe["dsr"]              # deflated Sharpe ratio
+res.bootstrap["sharpe"]        # {'observed': …, 'low': …, 'median': …, 'high': …}
+res.split["degradation_p_value"]
+for f in res.findings:
+    print(f.severity, f.code, f.message)
+# warning OUT_OF_SAMPLE_DEGRADATION Sharpe fell from 0.74 in-sample to -0.45 out-of-sample (p=0.042).
+
+res.to_json()                  # strict JSON
+```
+
+Pass `trials=` (a DataFrame with the returns of every variant you tried) to measure the real dispersion between variants and get the probability of backtest overfitting.
+
+[Backtest validity documentation »](https://github.com/diegoalvarezmgl/quantstats-pro/blob/main/docs/validity.md)
+
+---
+
+## For AI agents
+
+QuantStats Pro is built to be driven by coding agents as well as by people. Charts are for humans; agents get JSON, explicit input checks and a usage guide that ships inside the package.
+
+```bash
+python -m quantstats guide          # input contract, which call answers what, how to report results
+quantstats validate returns.csv --benchmark spy.csv --n-trials 50 --split 2023-01-01
+quantstats metrics returns.csv --benchmark spy.csv
+quantstats decay returns.csv --windows 21,63,126
+quantstats montecarlo returns.csv --sims 1000 --bust -0.25
+quantstats report returns.csv --kind validity --output validity.html
+```
+
+- Every analysis command prints **one JSON object** to stdout; errors are JSON on stderr with exit code 2.
+- **No side effects**: nothing opens a browser or downloads data. Benchmarks come from a file.
+- **Explicit inputs**: prices are rejected with a message that says how to convert them; ambiguous columns must be named.
+- **Reproducible**: bootstraps and simulations are seeded by default.
+- [`AGENT_GUIDE.md`](https://github.com/diegoalvarezmgl/quantstats-pro/blob/main/quantstats/AGENT_GUIDE.md) and [`llms.txt`](https://github.com/diegoalvarezmgl/quantstats-pro/blob/main/llms.txt) tell an agent how to use the library and how not to overstate a result.
+
+Point your agent at the guide with one line in your project instructions: *"Before using quantstats, run `python -m quantstats guide`."*
+
+---
+
 ## Montecarlo Engine
 
 `quantstats.montecarlo` characterises an asset with several stochastic models, simulates forward paths from each, and compares the distribution of outcomes (CAGR, max drawdown, bust/goal probabilities, CVaR).
@@ -239,7 +312,7 @@ CAGR · Volatility · Downside Vol · Max Drawdown · Mean Drawdown · Win Rate 
 Each metric-window cell gets a **traffic-light status** (Excellent / Good / Warning / Critical) based on z-scores computed on a per-metric analysis scale (log transforms for skewed metrics). The tearsheet also includes:
 
 - **Health score** — count of Good/Excellent cells
-- **CUSUM** return-decay detector
+- **CUSUM** return-decay detector, with its target estimated on a reference period (first half of the sample by default) rather than on the data being judged
 - **Time underwater** duration analysis
 - Per-metric distribution charts with current observation vs historical mean
 
@@ -253,9 +326,11 @@ print(available_metrics())
 
 result = analyze(
     returns,
-    windows=(7, 15, 30),
+    windows=(7, 15, 30),   # (21, 63, 126) is less noisy for daily data
     rf=0.0,
     periods=252,
+    benchmark=None,        # pass benchmark returns to monitor alpha (r − β·b)
+    baseline=0.5,          # leading fraction of the sample used as reference
 )
 
 print(f"Health: {result.score}/{result.total} ({result.score_pct:.0f}%)")
@@ -273,7 +348,7 @@ Generate the full HTML tearsheet with `qs.reports.html_alpha_decay(returns)`.
 
 ## API reference
 
-QuantStats Pro exposes **50+ stats**, **15+ plot types**, and **4 HTML report generators**. Explore the full API interactively:
+QuantStats Pro exposes **50+ stats**, **15+ plot types**, and **5 HTML report generators**. Explore the full API interactively:
 
 ```python
 [f for f in dir(qs.stats) if not f.startswith("_")]
@@ -314,7 +389,7 @@ pip install quantstats-pro --upgrade
 ## Requirements
 
 - [Python](https://www.python.org) >= 3.10
-- [pandas](https://github.com/pydata/pandas) >= 1.5.0
+- [pandas](https://github.com/pydata/pandas) >= 2.0.0
 - [numpy](http://www.numpy.org) >= 1.24.0
 - [scipy](https://www.scipy.org) >= 1.11.0
 - [matplotlib](https://matplotlib.org) >= 3.7.0
