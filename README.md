@@ -94,6 +94,8 @@ result = qs.reports.html_validity(
 print(result.summary())
 ```
 
+![Backtest validity tearsheet — an overfit moving-average crossover](https://raw.githubusercontent.com/diegoalvarezmgl/quantstats-pro/main/docs/report_validity.webp)
+
 [View interactive validity sample](https://htmlpreview.github.io/?https://github.com/diegoalvarezmgl/quantstats-pro/blob/main/docs/tearsheet_validity.html) · [Backtest validity docs](https://github.com/diegoalvarezmgl/quantstats-pro/blob/main/docs/validity.md)
 
 ### Simple tearsheet — `html_simple`
