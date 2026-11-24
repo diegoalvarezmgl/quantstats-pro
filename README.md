@@ -3,20 +3,16 @@
 [![CI](https://github.com/diegoalvarezmgl/quantstats-pro/actions/workflows/ci.yml/badge.svg)](https://github.com/diegoalvarezmgl/quantstats-pro/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](https://github.com/diegoalvarezmgl/quantstats-pro/blob/main/LICENSE.txt)
 
-# QuantStats Pro: Advanced portfolio analytics for quants
+![QuantStats Pro — agent-first portfolio analytics with backtest-validity tests](https://raw.githubusercontent.com/diegoalvarezmgl/quantstats-pro/main/docs/banner.webp)
 
-**QuantStats Pro** is an actively maintained **drop-in replacement** for [QuantStats](https://github.com/ranaroussi/quantstats) — same `import quantstats as qs`, hardened metrics, and a product roadmap that goes well beyond the original scope.   
-  
-Where original quantstats stops at classic performance stats and a single HTML tearsheet, Pro is built to become a **definitive quantitative analytics stack**: advanced risk engines, new metrics, institutional-grade reports, and outputs designed to drive **actionable decisions**, not just describe the past.
+# QuantStats Pro
 
-Built for systematic traders, portfolio managers, and quant researchers who need production-grade tearsheets from a returns series.
+Portfolio analytics for Python, computed from a returns series: performance and risk metrics, HTML tearsheets, backtest-validity tests, an alpha-decay monitor and multi-model Monte Carlo risk.
+
+It is a fork of [QuantStats](https://github.com/ranaroussi/quantstats) with the same `import quantstats as qs`. It tracks upstream's statistical fixes (currently through 0.0.86) and adds the modules listed below. A command line (`validate`, `metrics`, `decay`, `montecarlo`, `report`) prints JSON, so a coding agent can run these analyses and read the result without parsing HTML.
 
 ```bash
 pip install quantstats-pro
-```
-
-```python
-import quantstats as qs
 ```
 
 > **Note:** QuantStats Pro **cannot coexist** with the original `quantstats`
@@ -26,21 +22,42 @@ import quantstats as qs
 
 [Changelog »](https://github.com/diegoalvarezmgl/quantstats-pro/blob/main/CHANGELOG.md) · [Upstream »](https://github.com/ranaroussi/quantstats) · [Contributing »](https://github.com/diegoalvarezmgl/quantstats-pro/blob/main/CONTRIBUTING.md)
 
-### Why QuantStats Pro?
+### In one call
 
-Same API surface, stronger foundation — bugfixes, reliability, and a growing analytics layer that upstream does not aim to provide.
+```python
+import quantstats as qs
 
-**Headline additions (v0.3.0+):**
+result = qs.reports.html_validity(
+    returns,                 # simple per-period returns of the strategy
+    benchmark,               # benchmark returns (optional)
+    trials=all_variants,     # returns of every variant tried, or n_trials=60
+    split="2022-01-01",      # first date not used to choose the strategy
+    output="validity.html",
+)
+print(result.summary())
+```
+
+The same analysis from a shell, as JSON:
+
+```bash
+quantstats validate returns.csv --benchmark spy.csv --n-trials 60 --split 2022-01-01
+```
+
+The report gives the deflated Sharpe ratio and minimum track record length (Bailey and López de Prado), stationary-bootstrap confidence intervals, an in-sample / out-of-sample test of Sharpe degradation, alpha with Newey–West errors and the probability of backtest overfitting by CSCV. [Sample report](https://htmlpreview.github.io/?https://github.com/diegoalvarezmgl/quantstats-pro/blob/main/docs/tearsheet_validity.html) · [How these tests behave on 1,000 simulated markets](https://github.com/diegoalvarezmgl/quantstats-pro/blob/main/docs/articles/selection-bias.md)
+
+### What it adds to QuantStats
+
+The API of the original is unchanged; existing code keeps working. These are the additions:
 
 
 | Capability              | What you get                                                                                                                         |
 | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
 | `html_simple`           | Lean equity-curve tearsheet — fast read on performance vs benchmark                                                                  |
 | `html_montecarlo`       | Multi-model forward risk report (GBM, GARCH, Heston, bootstraps, Bayesian, …) with bust/goal probabilities and cross-model consensus |
-| `html_alpha_decay`      | Alpha-decay monitor — edge test against a reference period, z-score traffic lights, CUSUM, time-underwater                           |
-| `html_validity`         | **New in 0.5** — is the backtest real? Deflated Sharpe, minimum track record, bootstrap intervals, in/out-of-sample, alpha decay, PBO |
+| `html_alpha_decay`      | Alpha-decay monitor — edge test against a reference period, rolling z-scores, CUSUM, time-underwater                           |
+| `html_validity`         | Backtest validity: deflated Sharpe, minimum track record, bootstrap intervals, in/out-of-sample, alpha decay, PBO |
 | `quantstats.validity`   | Programmatic backtest-validity engine with structured findings and JSON output                                                       |
-| `quantstats` CLI        | **New in 0.5** — JSON-first command line and a packaged guide so AI agents use the library correctly                                 |
+| `quantstats` CLI        | Command line with JSON output, and a usage guide for coding agents shipped in the package                                          |
 | `quantstats.montecarlo` | Programmatic multi-model simulation engine behind the Montecarlo tearsheet                                                           |
 | `quantstats.alphadecay` | Short-horizon rolling diagnostics engine behind the Alpha Decay tearsheet                                                            |
 | Classic `html`          | Full tearsheet — metrics + all charts, visually redesigned (v0.2.0+)                                                                 |
@@ -127,7 +144,7 @@ qs.reports.html_montecarlo(
 
 ### Alpha Decay tearsheet — `html_alpha_decay`
 
-Rolling-window monitor for short-horizon drift: 10 metrics × 7/15/30-day windows, z-score traffic lights, CUSUM decay detection, and time-underwater analysis.
+Rolling-window monitor for short-horizon drift: 10 metrics × 7/15/30-day windows, rolling z-scores, CUSUM decay detection, and time-underwater analysis.
 
 ```python
 qs.reports.html_alpha_decay(
