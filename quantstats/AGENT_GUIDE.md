@@ -104,6 +104,7 @@ from quantstats import alphadecay
 
 res = alphadecay.analyze(returns, benchmark=bench, windows=(21, 63, 126))
 d = res.to_dict()
+d["edge_test"]                           # reference period vs since: status, p_value
 d["health"]["score_pct"]                 # share of metric-window cells rated good
 d["metrics"]["volatility"]["windows"]    # per-window observed value, z-score, status
 ```
@@ -114,10 +115,18 @@ d["metrics"]["volatility"]["windows"]    # per-window observed value, z-score, s
   for daily data.
 - 10 metrics × 3 windows are 30 comparisons. A few red cells are expected by
   chance; look for a cluster that persists.
-- This monitor is descriptive. Do not report `cusum.alarm` as evidence of
-  decay on its own: with the default parameters it reflects only the latest
-  day and has little power on daily returns. For a statistical statement use
-  `validity.decay_analysis` (`trend_t_stat`) or the in/out-of-sample test.
+- **Read `d["edge_test"]` first.** It compares the reference period (first
+  half by default, `baseline=0.5`) with everything since, one-sided on the
+  Sharpe ratio: `status` is `ok`, `warning` (p < 0.05) or `critical`
+  (p < 0.01). This is the monitor's statistical statement about decay.
+- A health score of 100% does **not** mean the edge is intact. The cells look
+  at the latest windows only; they react to changes in risk and are too short
+  to detect a change in average return.
+- `edge_test` needs time: a decay that began in the last 10–20% of the sample
+  is usually not detected yet. `ok` means "no evidence so far".
+- Do not report `cusum.alarm` as evidence of decay: with the default
+  parameters it reflects only the latest day and has little power on daily
+  returns.
 
 ## 5. Forward simulation
 

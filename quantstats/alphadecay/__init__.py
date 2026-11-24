@@ -9,6 +9,7 @@ detection, and time-underwater analysis for equity curves.
 from . import plotting
 from .core import (
     DecayResult,
+    EdgeTestResult,
     MetricResult,
     WindowResult,
     analyze,
@@ -17,6 +18,7 @@ from .core import (
 
 __all__ = [
     "DecayResult",
+    "EdgeTestResult",
     "MetricResult",
     "WindowResult",
     "analyze",

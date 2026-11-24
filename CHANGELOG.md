@@ -1,6 +1,22 @@
 Changelog
 ===========
 
+0.5.1
+-----
+
+**Alpha decay**
+
+- New **edge test** (``DecayResult.edge_test``, ``"edge_test"`` in
+  ``to_dict()`` and the CLI, headline block in ``html_alpha_decay``): a
+  one-sided test of the Sharpe ratio since the reference period against the
+  reference period itself, on the monitored stream (alpha when a benchmark is
+  given). Status ``ok`` / ``warning`` (p < 0.05) / ``critical`` (p < 0.01).
+- Why: the health score only judges the latest rolling windows, which are too
+  short to detect a change in mean return. A strategy whose alpha had vanished
+  years earlier scored 30/30. The health score and cells are unchanged; the
+  tearsheet now says what they do and do not measure.
+- Not run with ``baseline=None`` or fewer than 30 observations on either side.
+
 0.5.0
 -----
 

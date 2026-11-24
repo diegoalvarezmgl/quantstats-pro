@@ -37,7 +37,7 @@ Same API surface, stronger foundation — bugfixes, reliability, and a growing a
 | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
 | `html_simple`           | Lean equity-curve tearsheet — fast read on performance vs benchmark                                                                  |
 | `html_montecarlo`       | Multi-model forward risk report (GBM, GARCH, Heston, bootstraps, Bayesian, …) with bust/goal probabilities and cross-model consensus |
-| `html_alpha_decay`      | Rolling alpha-decay monitor — z-score traffic lights, CUSUM, time-underwater, per-metric distribution charts                         |
+| `html_alpha_decay`      | Alpha-decay monitor — edge test against a reference period, z-score traffic lights, CUSUM, time-underwater                           |
 | `html_validity`         | **New in 0.5** — is the backtest real? Deflated Sharpe, minimum track record, bootstrap intervals, in/out-of-sample, alpha decay, PBO |
 | `quantstats.validity`   | Programmatic backtest-validity engine with structured findings and JSON output                                                       |
 | `quantstats` CLI        | **New in 0.5** — JSON-first command line and a packaged guide so AI agents use the library correctly                                 |
