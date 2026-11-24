@@ -296,6 +296,41 @@ class CusumResult:
     baseline_end: int | None = None  # observations used as reference (None = all)
 
 
+EdgeStatus = Literal["ok", "warning", "critical", "insufficient_data", "no_reference"]
+
+
+@dataclass
+class EdgeTestResult:
+    """
+    Reference period vs everything after it, on the monitored return stream.
+
+    This is the monitor's statistical statement about decay. The rolling
+    metric cells only look at the last few weeks or months, where a change in
+    the mean return is far smaller than the noise; this test uses every
+    observation since the reference period ended.
+
+    ``p_value`` is the one-sided probability of a Sharpe ratio this far below
+    the reference one if nothing had changed. ``status`` is ``warning`` below
+    0.05 and ``critical`` below 0.01.
+    """
+
+    status: EdgeStatus
+    kind: Literal["alpha", "mean_return"]
+    message: str
+    reference_n: int | None = None
+    recent_n: int | None = None
+    reference_sharpe_annual: float = np.nan
+    recent_sharpe_annual: float = np.nan
+    reference_mean_annual: float = np.nan
+    recent_mean_annual: float = np.nan
+    z_score: float = np.nan
+    p_value: float = np.nan
+
+    @property
+    def degraded(self) -> bool:
+        return self.status in ("warning", "critical")
+
+
 @dataclass
 class TimeUnderwaterResult:
     current_days: int
@@ -322,6 +357,7 @@ class DecayResult:
     time_underwater: TimeUnderwaterResult
     asset_label: str = "Asset"
     beta: float | None = None  # set when a benchmark was removed from returns
+    edge_test: EdgeTestResult | None = None
 
     @property
     def score_pct(self) -> float:
@@ -364,6 +400,20 @@ class DecayResult:
                 "score": int(self.score),
                 "total": int(self.total),
                 "score_pct": num(self.score_pct),
+            },
+            "edge_test": None if self.edge_test is None else {
+                "status": self.edge_test.status,
+                "degraded": bool(self.edge_test.degraded),
+                "kind": self.edge_test.kind,
+                "message": self.edge_test.message,
+                "reference_observations": self.edge_test.reference_n,
+                "recent_observations": self.edge_test.recent_n,
+                "reference_sharpe_annual": num(self.edge_test.reference_sharpe_annual),
+                "recent_sharpe_annual": num(self.edge_test.recent_sharpe_annual),
+                "reference_mean_annual": num(self.edge_test.reference_mean_annual),
+                "recent_mean_annual": num(self.edge_test.recent_mean_annual),
+                "z_score": num(self.edge_test.z_score),
+                "p_value": num(self.edge_test.p_value),
             },
             "metrics": metrics,
             "cusum": {
@@ -713,6 +763,70 @@ def _compute_time_underwater(returns: pd.Series) -> TimeUnderwaterResult:
     )
 
 
+def _compute_edge_test(
+    returns: pd.Series,
+    baseline: float | None,
+    periods: float,
+    has_benchmark: bool,
+) -> EdgeTestResult:
+    """Test whether the stream is worse after the reference period than in it."""
+    kind: Literal["alpha", "mean_return"] = "alpha" if has_benchmark else "mean_return"
+    noun = "Alpha" if has_benchmark else "Performance"
+    if baseline is None:
+        return EdgeTestResult(
+            status="no_reference",
+            kind=kind,
+            message="No reference period (baseline=None): the edge test was not run.",
+        )
+    from quantstats.validity import split_analysis
+
+    try:
+        res = split_analysis(returns, 1.0 - baseline, periods=periods)
+    except ValueError as exc:
+        return EdgeTestResult(
+            status="insufficient_data",
+            kind=kind,
+            message=f"Not enough observations to test the edge: {exc}",
+        )
+    ins, oos = res["in_sample"], res["out_of_sample"]
+    ann = float(np.sqrt(periods))
+    ref_sr, rec_sr = float(ins["sharpe"]) * ann, float(oos["sharpe"]) * ann
+    z, p = float(res["sharpe_change_z"]), float(res["degradation_p_value"])
+    if not np.isfinite(p):
+        return EdgeTestResult(
+            status="insufficient_data",
+            kind=kind,
+            message="The edge test is undefined for this series (zero variance).",
+            reference_n=int(ins["n"]),
+            recent_n=int(oos["n"]),
+        )
+    p_txt = "p<0.001" if p < 0.001 else f"p={p:.3f}"
+    status: EdgeStatus = "critical" if p < 0.01 else "warning" if p < 0.05 else "ok"
+    if status == "ok":
+        message = (
+            f"{noun} since the reference period is consistent with it: Sharpe "
+            f"{ref_sr:.2f} then, {rec_sr:.2f} since ({p_txt})."
+        )
+    else:
+        message = (
+            f"{noun} has deteriorated since the reference period: Sharpe "
+            f"{ref_sr:.2f} then, {rec_sr:.2f} since ({p_txt})."
+        )
+    return EdgeTestResult(
+        status=status,
+        kind=kind,
+        message=message,
+        reference_n=int(ins["n"]),
+        recent_n=int(oos["n"]),
+        reference_sharpe_annual=ref_sr,
+        recent_sharpe_annual=rec_sr,
+        reference_mean_annual=float(np.mean(returns.to_numpy(dtype=float)[: int(ins["n"])]) * periods),
+        recent_mean_annual=float(np.mean(returns.to_numpy(dtype=float)[int(ins["n"]) :]) * periods),
+        z_score=z,
+        p_value=p,
+    )
+
+
 def analyze(
     returns: pd.Series,
     windows: tuple[int, ...] = (7, 15, 30),
@@ -731,6 +845,11 @@ def analyze(
     observation against the historical distribution (z-score / traffic light),
     and adds CUSUM + time-underwater diagnostics.
 
+    ``result.edge_test`` compares the reference period with everything after
+    it (one-sided Sharpe test). It is the statistical statement about decay;
+    the rolling cells describe only the latest windows and cannot detect a
+    change in mean return on their own.
+
     Parameters
     ----------
     benchmark : pd.Series, optional
@@ -739,8 +858,8 @@ def analyze(
         the monitor tracks alpha rather than total performance.
     baseline : float or None, default 0.5
         Leading fraction of the sample used as the reference period for the
-        CUSUM target (and for β). ``None`` uses the whole sample, which was
-        the behaviour before 0.5.0.
+        edge test, the CUSUM target and β. ``None`` uses the whole sample
+        (the behaviour before 0.5.0) and skips the edge test.
     """
     if isinstance(returns, pd.DataFrame):
         returns = returns.iloc[:, 0]
@@ -786,6 +905,7 @@ def analyze(
     baseline_n = None if baseline is None else max(2, int(len(returns) * baseline))
     cusum = _compute_cusum(returns, k=cusum_k, h=cusum_h, baseline_n=baseline_n)
     tuw = _compute_time_underwater(returns)
+    edge_test = _compute_edge_test(returns, baseline, periods, beta is not None)
 
     return DecayResult(
         returns=returns,
@@ -797,6 +917,7 @@ def analyze(
         time_underwater=tuw,
         asset_label=str(label),
         beta=beta,
+        edge_test=edge_test,
     )
 
 

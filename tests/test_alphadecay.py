@@ -322,3 +322,62 @@ class TestReferencePeriod:
         assert parsed["health"]["total"] == 30
         assert parsed["cusum"]["baseline_observations"] == 300
         assert set(parsed["metrics"]["volatility"]["windows"]) == {"7", "15", "30"}
+
+
+class TestEdgeTest:
+    """0.5.1: reference period vs everything after it."""
+
+    @staticmethod
+    def _series(seed, shift_at=None, shift=0.0, n=1500):
+        rng = np.random.default_rng(seed)
+        idx = pd.bdate_range("2015-01-01", periods=n)
+        bench = pd.Series(rng.standard_t(5, n) * 0.008 + 0.0003, index=idx)
+        drift = np.full(n, 0.0008)
+        if shift_at is not None:
+            drift[shift_at:] += shift
+        strat = pd.Series(0.5 * bench.values + drift + rng.normal(0, 0.006, n), index=idx)
+        return strat, bench
+
+    def test_detects_alpha_that_disappears(self):
+        hits = 0
+        for seed in range(40):
+            strat, bench = self._series(seed, shift_at=750, shift=-0.0012)
+            hits += analyze(strat, benchmark=bench, windows=(21, 63)).edge_test.degraded
+        assert hits >= 32  # ~95% in simulation
+
+    def test_false_alarm_rate_is_near_nominal(self):
+        alarms = 0
+        for seed in range(100):
+            strat, bench = self._series(seed)
+            alarms += analyze(strat, benchmark=bench, windows=(21, 63)).edge_test.degraded
+        assert alarms <= 12  # nominal 5%
+
+    def test_fields_and_kind(self):
+        strat, bench = self._series(0, shift_at=750, shift=-0.0012)
+        et = analyze(strat, benchmark=bench).edge_test
+        assert et.kind == "alpha"
+        assert et.reference_n == 750 and et.recent_n == 750
+        assert et.recent_sharpe_annual < et.reference_sharpe_annual
+        assert et.z_score < 0 and 0 <= et.p_value <= 1
+        assert analyze(strat).edge_test.kind == "mean_return"
+
+    def test_no_reference_and_short_series_do_not_raise(self):
+        strat, _ = self._series(0)
+        assert analyze(strat, baseline=None).edge_test.status == "no_reference"
+        short = analyze(strat.iloc[:40]).edge_test
+        assert short.status == "insufficient_data" and not short.degraded
+
+    def test_to_dict_and_html(self, tmp_path):
+        import json
+
+        import quantstats as qs
+
+        strat, bench = self._series(0, shift_at=750, shift=-0.0012)
+        d = analyze(strat, benchmark=bench).to_dict()
+        json.dumps(d, allow_nan=False)
+        assert d["edge_test"]["degraded"] is True
+        assert d["edge_test"]["status"] in ("warning", "critical")
+        out = tmp_path / "ad.html"
+        qs.reports.html_alpha_decay(strat, benchmark=bench, output=str(out))
+        html = out.read_text()
+        assert "Has the Edge Decayed?" in html and "Decay" in html

@@ -1573,6 +1573,39 @@ def _ad_score_tone(score_pct: float) -> str:
     return "critical"
 
 
+def _ad_edge_test_html(result):
+    """Headline block: reference period vs everything after it."""
+    et = result.edge_test
+    if et is None:
+        return ""
+    noun = "alpha" if et.kind == "alpha" else "return"
+    if et.status in ("no_reference", "insufficient_data"):
+        return (
+            '<div class="kpi-grid score-grid"><div class="kpi good">'
+            '<div class="label">Edge Test</div><div class="value">Not run</div>'
+            f'<div class="hint">{et.message}</div></div></div>'
+        )
+    tone = {"ok": "excellent", "warning": "warning", "critical": "critical"}[et.status]
+    verdict = {"ok": "No decay detected", "warning": "Decay likely", "critical": "Decay detected"}[et.status]
+    return (
+        '<div class="kpi-grid score-grid">'
+        f'<div class="kpi {tone}"><div class="label">Edge Test &mdash; reference period vs since</div>'
+        f'<div class="value">{verdict}</div>'
+        f'<div class="hint">{et.message}</div></div></div>'
+        '<div class="kpi-grid">'
+        f'<div class="kpi good"><div class="label">Reference Sharpe</div>'
+        f'<div class="value">{et.reference_sharpe_annual:.2f}</div>'
+        f'<div class="hint">first {et.reference_n:,} obs; {noun} {et.reference_mean_annual:.1%}/yr</div></div>'
+        f'<div class="kpi {tone}"><div class="label">Sharpe Since</div>'
+        f'<div class="value">{et.recent_sharpe_annual:.2f}</div>'
+        f'<div class="hint">last {et.recent_n:,} obs; {noun} {et.recent_mean_annual:.1%}/yr</div></div>'
+        f'<div class="kpi {tone}"><div class="label">p-value (one-sided)</div>'
+        f'<div class="value">{"&lt;0.001" if et.p_value < 0.001 else f"{et.p_value:.3f}"}</div>'
+        f'<div class="hint">z = {et.z_score:+.2f}; warning &lt; 0.05, critical &lt; 0.01</div></div>'
+        "</div>"
+    )
+
+
 def _ad_summary_table_html(result):
     from .alphadecay.core import status_label
 
@@ -1697,7 +1730,8 @@ def html_alpha_decay(
         ``r − β·benchmark`` (alpha) instead of total returns.
     baseline : float or None, default 0.5
         Leading fraction of the sample used as the reference period for the
-        CUSUM target and β. ``None`` uses the whole sample (pre-0.5.0).
+        edge test, the CUSUM target and β. ``None`` uses the whole sample
+        (pre-0.5.0) and skips the edge test.
     """
     import matplotlib.pyplot as _plt
 
@@ -1760,7 +1794,7 @@ def html_alpha_decay(
         '<div class="kpi-grid score-grid">'
         f'<div class="kpi {score_tone}"><div class="label">Health Score</div>'
         f'<div class="value">{result.score}/{result.total}</div>'
-        f'<div class="hint">metric-window cells rated Good or Excellent '
+        f'<div class="hint">latest-window cells rated Good or Excellent '
         f"({result.score_pct:.0f}%)</div></div></div>"
     )
 
@@ -1788,6 +1822,7 @@ def html_alpha_decay(
         "v": __version__,
         "generated_at": _dt.now().strftime("%d %b, %Y %H:%M").lstrip("0"),
         "windows_label": windows_label,
+        "edge_test": _ad_edge_test_html(result),
         "score_summary": score_html,
         "status_counts": _ad_status_counts_html(result),
         "summary_table": _ad_summary_table_html(result),

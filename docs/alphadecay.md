@@ -71,7 +71,7 @@ result.to_dict()   # JSON-serialisable summary
 ```
 
 - `baseline` — leading fraction of the sample used as the reference period for
-  the CUSUM target mean and σ (default `0.5`). `None` uses the full sample
+  the edge test and the CUSUM target mean and σ (default `0.5`). `None` uses the full sample
   (behaviour before 0.5.0), which lets a decayed strategy lower its own target.
 - `benchmark` — benchmark returns. The monitor then runs on the active stream
   `r − β·benchmark` (β estimated on the reference period), so it tracks alpha
@@ -81,8 +81,42 @@ result.to_dict()   # JSON-serialisable summary
   default `k`/`h` its alarm flag has little power on daily returns. Windows of 7–15 days are noisy;
   `(21, 63, 126)` is a steadier choice for daily data.
 
-For a formal test of whether alpha is trending down, see
-[Backtest validity](validity.md) (`validity.decay_analysis`).
+## Edge test (0.5.1+)
+
+```python
+et = result.edge_test
+et.status        # "ok", "warning" (p < 0.05), "critical" (p < 0.01)
+et.message       # one-sentence reading
+et.reference_sharpe_annual, et.recent_sharpe_annual, et.p_value
+```
+
+The rolling cells look only at the latest windows. Over 126 days a strategy
+with 10% volatility has a standard error of about 14% a year on its mean
+return, so the cells cannot tell a lost edge from noise; a strategy whose
+alpha vanished years ago can score 30/30.
+
+The edge test answers that question directly. It compares the Sharpe ratio of
+the reference period with the Sharpe ratio of everything after it (one-sided
+test, same statistic as `validity.split_analysis`), on the monitored stream —
+alpha when a benchmark is given. It is shown at the top of the tearsheet.
+
+Measured on simulated daily strategies (10 years, 9.5% active volatility,
+20%/year alpha):
+
+| Scenario | Flagged (p < 0.05) |
+| --- | --- |
+| No change | 4–6% |
+| Alpha drops to −5%/year at 50–60% of the sample | 96–99% |
+| Alpha halves at 50% of the sample | 68% |
+| Alpha drops to −5%/year in the last 20% | 53% |
+| Alpha drops to −5%/year in the last 10% | 19% |
+
+Recent decay needs time to show. `ok` means no evidence so far, not that the
+edge is intact. With `baseline=None` or fewer than 30 observations on either
+side the test is not run (`status` is `no_reference` / `insufficient_data`).
+
+For the trend of alpha over time, see [Backtest validity](validity.md)
+(`validity.decay_analysis`).
 
 ## Traffic lights
 
