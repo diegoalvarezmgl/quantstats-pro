@@ -39,7 +39,7 @@ from scipy.stats import linregress as _linregress
 from scipy.stats import norm as _norm
 
 from . import utils as _utils
-from ._compat import safe_concat
+from ._compat import safe_concat, safe_resample
 from .utils import validate_input
 
 # Type aliases for common types (Python 3.10+ syntax)
@@ -93,8 +93,30 @@ def compsum(returns: Returns) -> Returns:
         >>> cumulative = compsum(returns)
         >>> print(cumulative)
     """
-    # Add 1 to convert returns to growth factors, then cumulative product
-    return returns.add(1).cumprod(axis=0) - 1
+    # Add 1 to convert returns to growth factors, then cumulative product.
+    # Gaps are treated as flat here: an equity curve has to carry a value
+    # through a missing observation, even though the statistics built on the
+    # raw returns exclude it.
+    return returns.fillna(0).add(1).cumprod(axis=0) - 1
+
+
+def _paired_observations(returns, benchmark):
+    """
+    Restrict a strategy and its benchmark to the dates both were observed.
+
+    Joint estimators (covariance, regression) need matched pairs. numpy and
+    scipy propagate NaN through the whole calculation, so one missing day on
+    either side is enough to make beta, alpha or R-squared undefined.
+
+    Args:
+        returns: Strategy return series
+        benchmark: Benchmark return series
+
+    Returns:
+        tuple: (returns, benchmark) covering only the shared observations
+    """
+    paired = _pd.DataFrame({"returns": returns, "benchmark": benchmark}).dropna()
+    return paired["returns"], paired["benchmark"]
 
 
 def comp(returns: Returns) -> _pd.Series | float:
@@ -145,6 +167,7 @@ def distribution(
         >>> dist = distribution(returns)
         >>> print(dist['Daily']['values'])
     """
+
     def get_outliers(data):
         """
         Identify outliers using the IQR method.
@@ -189,10 +212,13 @@ def distribution(
     # Calculate distributions for different time periods
     return {
         "Daily": get_outliers(daily),
-        "Weekly": get_outliers(daily.resample("W-MON").apply(apply_fnc)),
-        "Monthly": get_outliers(daily.resample("ME").apply(apply_fnc)),
-        "Quarterly": get_outliers(daily.resample("QE").apply(apply_fnc)),
-        "Yearly": get_outliers(daily.resample("YE").apply(apply_fnc)),
+        # safe_resample() translates the frequency alias; "ME"/"QE"/"YE" only
+        # exist in pandas 2.2+, so resampling on them directly breaks older
+        # supported versions.
+        "Weekly": get_outliers(safe_resample(daily, "W-MON", apply_fnc)),
+        "Monthly": get_outliers(safe_resample(daily, "ME", apply_fnc)),
+        "Quarterly": get_outliers(safe_resample(daily, "QE", apply_fnc)),
+        "Yearly": get_outliers(safe_resample(daily, "YE", apply_fnc)),
     }
 
 
@@ -230,7 +256,11 @@ def expected_return(
     returns = _utils.aggregate_returns(returns, aggregate, compounded)
 
     # Calculate geometric mean: (product of (1 + returns))^(1/n) - 1
-    return _np.prod(1 + returns, axis=0) ** (1 / len(returns)) - 1
+    # Missing observations are excluded rather than counted as 1.0 growth:
+    # np.prod would return NaN for the whole series, and len() would stretch
+    # the exponent over periods that were never observed.
+    observed = returns.count()
+    return _np.nanprod(1 + returns, axis=0) ** (1 / observed) - 1
 
 
 def geometric_mean(
@@ -294,6 +324,13 @@ def outliers(returns: Returns, quantile: float = 0.95) -> Returns:
         >>> returns = pd.Series([0.01, 0.02, 0.05, -0.01, 0.10])
         >>> outlier_returns = outliers(returns, quantile=0.90)
         >>> print(outlier_returns)
+    Note:
+        Computed from the return series, not from discrete trades. A single
+        multi-day trade spanning three up days and two down days counts as
+        three wins and two losses here. This is well defined and useful for
+        systematic strategies with regular rebalancing, but it will not match
+        trade-level statistics from a discretionary trading journal. See
+        "Period-Based vs Trade-Based Metrics" in the README.
     """
     # Filter returns above the specified quantile and remove NaN values
     return returns[returns > returns.quantile(quantile)].dropna(how="all")
@@ -413,6 +450,13 @@ def consecutive_wins(
         >>> returns = pd.Series([0.01, 0.02, 0.03, -0.01, 0.02])
         >>> max_wins = consecutive_wins(returns)
         >>> print(f"Max consecutive wins: {max_wins}")
+    Note:
+        Computed from the return series, not from discrete trades. A single
+        multi-day trade spanning three up days and two down days counts as
+        three wins and two losses here. This is well defined and useful for
+        systematic strategies with regular rebalancing, but it will not match
+        trade-level statistics from a discretionary trading journal. See
+        "Period-Based vs Trade-Based Metrics" in the README.
     """
     if prepare_returns:
         returns = _utils._prepare_returns(returns)
@@ -449,6 +493,13 @@ def consecutive_losses(
         >>> returns = pd.Series([0.01, -0.02, -0.01, -0.01, 0.02])
         >>> max_losses = consecutive_losses(returns)
         >>> print(f"Max consecutive losses: {max_losses}")
+    Note:
+        Computed from the return series, not from discrete trades. A single
+        multi-day trade spanning three up days and two down days counts as
+        three wins and two losses here. This is well defined and useful for
+        systematic strategies with regular rebalancing, but it will not match
+        trade-level statistics from a discretionary trading journal. See
+        "Period-Based vs Trade-Based Metrics" in the README.
     """
     if prepare_returns:
         returns = _utils._prepare_returns(returns)
@@ -493,7 +544,10 @@ def exposure(
         Rounds up to nearest percent to avoid zero exposure from rounding.
         """
         # Count non-NaN and non-zero returns
-        ex = len(ret[(~_np.isnan(ret)) & (ret != 0)]) / len(ret)
+        observed = int((~_np.isnan(ret)).sum())
+        if observed == 0:
+            return 0.0
+        ex = len(ret[(~_np.isnan(ret)) & (ret != 0)]) / observed
         # Round up to nearest percent
         return _ceil(ex * 100) / 100
 
@@ -532,7 +586,15 @@ def win_rate(
         >>> returns = pd.Series([0.01, -0.02, 0.03, -0.01, 0.02])
         >>> wr = win_rate(returns)
         >>> print(f"Win rate: {wr:.2%}")
+    Note:
+        Computed from the return series, not from discrete trades. A single
+        multi-day trade spanning three up days and two down days counts as
+        three wins and two losses here. This is well defined and useful for
+        systematic strategies with regular rebalancing, but it will not match
+        trade-level statistics from a discretionary trading journal. See
+        "Period-Based vs Trade-Based Metrics" in the README.
     """
+
     def _win_rate(series):
         """
         Calculate win rate for a single return series.
@@ -541,10 +603,15 @@ def win_rate(
         error handling for calculation issues.
         """
         try:
+            # Drop gaps first: NaN != 0 evaluates True, so missing
+            # observations would otherwise sit in the denominator.
+            series = series.dropna()
             # Filter out zero returns (periods with no trading)
             non_zero_returns = series[series != 0]
             if len(non_zero_returns) == 0:
-                warn("No non-zero returns found for win rate calculation, returning 0.0", stacklevel=2)
+                warn(
+                    "No non-zero returns found for win rate calculation, returning 0.0"
+                )
                 return 0.0
 
             # Calculate ratio of positive returns to non-zero returns
@@ -603,8 +670,14 @@ def avg_return(
     if aggregate:
         returns = _utils.aggregate_returns(returns, aggregate, compounded)
 
-    # Calculate mean of non-zero returns
-    return returns[returns != 0].dropna().mean()
+    # Calculate mean of non-zero returns.
+    #
+    # No .dropna() here: on a DataFrame the mask above turns unselected cells
+    # into NaN, and .dropna() drops the whole *row* if any column is NaN. That
+    # made each column's average depend on the other columns in the frame, so
+    # a strategy's figure changed when a benchmark column sat beside it.
+    # .mean() already skips NaN column-wise.
+    return returns[returns != 0].mean()
 
 
 def avg_win(
@@ -640,8 +713,10 @@ def avg_win(
     if aggregate:
         returns = _utils.aggregate_returns(returns, aggregate, compounded)
 
-    # Calculate mean of positive returns only
-    return returns[returns > 0].dropna().mean()
+    # Calculate mean of positive returns only.
+    # See avg_return(): .dropna() would drop whole rows on a DataFrame and
+    # make this column's average depend on its neighbours.
+    return returns[returns > 0].mean()
 
 
 def avg_loss(
@@ -677,8 +752,10 @@ def avg_loss(
     if aggregate:
         returns = _utils.aggregate_returns(returns, aggregate, compounded)
 
-    # Calculate mean of negative returns only
-    return returns[returns < 0].dropna().mean()
+    # Calculate mean of negative returns only.
+    # See avg_return(): .dropna() would drop whole rows on a DataFrame and
+    # make this column's average depend on its neighbours.
+    return returns[returns < 0].mean()
 
 
 def volatility(
@@ -750,7 +827,11 @@ def rolling_volatility(
         >>> print(rolling_vol)
     """
     if prepare_returns:
-        returns = _utils._prepare_returns(returns, rolling_period)
+        # This used to pass `rolling_period` positionally into the `rf` slot.
+        # It was harmless only because the old inspect.stack() exclusion list
+        # stopped rf being applied for this function; spelled out, there is no
+        # risk-free adjustment here at all.
+        returns = _utils._prepare_returns(returns)
 
     # Calculate rolling standard deviation and annualize
     return returns.rolling(rolling_period).std() * _np.sqrt(periods_per_year)
@@ -821,11 +902,26 @@ def autocorr_penalty(
     if isinstance(returns, _pd.DataFrame):
         returns = returns[returns.columns[0]]
 
-    # returns.to_csv('/Users/ran/Desktop/test.csv')
+    # Gaps carry no autocorrelation information, and corrcoef propagates
+    # any NaN straight through.
+    returns = returns.dropna()
+
     num = len(returns)
 
-    # Calculate autocorrelation coefficient between consecutive returns
-    coef = _np.abs(_np.corrcoef(returns[:-1], returns[1:])[0, 1])
+    # corrcoef needs at least two points to be defined; below that it returns
+    # NaN with a RuntimeWarning, so fall back to the neutral penalty.
+    if num < 2:
+        return 1.0
+
+    # Calculate autocorrelation coefficient between consecutive returns.
+    # Constant (zero-variance) returns divide by a zero standard deviation
+    # here, so suppress the warning and handle the resulting NaN below.
+    with _np.errstate(invalid="ignore", divide="ignore"):
+        coef = _np.abs(_np.corrcoef(returns[:-1], returns[1:])[0, 1])
+
+    # A NaN coefficient would otherwise propagate silently through the sum.
+    if _np.isnan(coef):
+        return 1.0
 
     # Vectorized calculation instead of list comprehension
     x = _np.arange(1, num)
@@ -874,9 +970,11 @@ def sharpe(
     validate_input(returns)
 
     # Validate parameters for risk-free rate handling
-    if rf != 0 and periods is None:
-        raise ValueError("periods parameter is required when risk-free rate (rf) is non-zero. "
-                         "This is needed to properly annualize the risk-free rate.")
+    if _utils._rf_is_nonzero(rf) and periods is None:
+        raise ValueError(
+            "periods parameter is required when risk-free rate (rf) is non-zero. "
+            "This is needed to properly annualize the risk-free rate."
+        )
 
     # Prepare returns (subtract risk-free rate if applicable)
     returns = _utils._prepare_returns(returns, rf, periods)
@@ -956,7 +1054,7 @@ def rolling_sharpe(
         pd.Series: Rolling Sharpe ratio series
 
     Raises:
-        Exception: If rf != 0 and rolling_period is None
+        Exception: If rf != 0 and periods_per_year is None
 
     Example:
         >>> returns = pd.Series([0.01, -0.02, 0.03, -0.01, 0.02])
@@ -964,11 +1062,15 @@ def rolling_sharpe(
         >>> print(rolling_sharpe_ratio)
     """
     # Validate parameters for risk-free rate handling
-    if rf != 0 and rolling_period is None:
-        raise Exception("Must provide periods if rf != 0")
+    if _utils._rf_is_nonzero(rf) and periods_per_year is None:
+        raise Exception("Must provide periods_per_year if rf != 0")
 
     if prepare_returns:
-        returns = _utils._prepare_returns(returns, rf, rolling_period)
+        # The third argument is the number of periods per year used to
+        # de-annualize rf, not the window length. Passing rolling_period here
+        # subtracted a rate de-annualized over the window instead of the year,
+        # which at the defaults overcharged rf by exactly 2x.
+        returns = _utils._prepare_returns(returns, rf, periods_per_year)
 
     # Calculate rolling mean and standard deviation
     res = returns.rolling(rolling_period).mean() / returns.rolling(rolling_period).std()
@@ -1019,15 +1121,17 @@ def sortino(
     validate_input(returns)
 
     # Validate parameters for risk-free rate handling
-    if rf != 0 and periods is None:
-        raise ValueError("periods parameter is required when risk-free rate (rf) is non-zero. "
-                         "This is needed to properly annualize the risk-free rate.")
+    if _utils._rf_is_nonzero(rf) and periods is None:
+        raise ValueError(
+            "periods parameter is required when risk-free rate (rf) is non-zero. "
+            "This is needed to properly annualize the risk-free rate."
+        )
 
     # Prepare returns (subtract risk-free rate if applicable)
     returns = _utils._prepare_returns(returns, rf, periods)
 
     # Calculate downside deviation (only negative returns)
-    downside = _np.sqrt((returns[returns < 0] ** 2).sum() / len(returns))
+    downside = _np.sqrt((returns[returns < 0] ** 2).sum() / returns.count())
 
     # Apply autocorrelation penalty if smart mode enabled
     if smart:
@@ -1107,7 +1211,7 @@ def rolling_sortino(
         pd.Series: Rolling Sortino ratio series
 
     Raises:
-        Exception: If rf != 0 and rolling_period is None
+        Exception: If rf != 0 and periods_per_year is None
 
     Example:
         >>> returns = pd.Series([0.01, -0.02, 0.03, -0.01, 0.02])
@@ -1115,11 +1219,15 @@ def rolling_sortino(
         >>> print(rolling_sortino_ratio)
     """
     # Validate parameters for risk-free rate handling
-    if rf != 0 and rolling_period is None:
-        raise Exception("Must provide periods if rf != 0")
+    if _utils._rf_is_nonzero(rf) and periods_per_year is None:
+        raise Exception("Must provide periods_per_year if rf != 0")
 
     if kwargs.get("prepare_returns", True):
-        returns = _utils._prepare_returns(returns, rf, rolling_period)
+        # The third argument is the number of periods per year used to
+        # de-annualize rf, not the window length. Passing rolling_period here
+        # subtracted a rate de-annualized over the window instead of the year,
+        # which at the defaults overcharged rf by exactly 2x.
+        returns = _utils._prepare_returns(returns, rf, periods_per_year)
 
     # Optimized downside calculation using vectorized operations
     def calc_downside(x):
@@ -1206,7 +1314,8 @@ def probabilistic_ratio(
         rf (float): Risk-free rate (annualized, default: 0.0)
         base (str): Base metric ('sharpe', 'sortino', 'adjusted_sortino')
         periods (int): Periods per year for annualization (default: 252)
-        annualize (bool): Whether to annualize the result (default: False)
+        annualize (bool): Deprecated and ignored. A probability has no
+            annualized form (default: False)
         smart (bool): Whether to apply autocorrelation penalty (default: False)
 
     Returns:
@@ -1220,38 +1329,39 @@ def probabilistic_ratio(
         >>> prob_ratio = probabilistic_ratio(returns, base="sharpe")
         >>> print(f"Probabilistic Sharpe ratio: {prob_ratio:.4f}")
     """
-    # Calculate the base ratio depending on the selected metric
+    # Calculate the base ratio on excess returns, the same way sharpe() and
+    # sortino() handle rf. rf used to be ignored here and then subtracted from
+    # the finished ratio, which mixed an annualized rate into a per-period
+    # statistic.
     if base.lower() == "sharpe":
-        base = sharpe(series, periods=periods, annualize=False, smart=smart)
+        base = sharpe(series, rf=rf, periods=periods, annualize=False, smart=smart)
     elif base.lower() == "sortino":
-        base = sortino(series, periods=periods, annualize=False, smart=smart)
+        base = sortino(series, rf=rf, periods=periods, annualize=False, smart=smart)
     elif base.lower() == "adjusted_sortino":
-        base = adjusted_sortino(series, periods=periods, annualize=False, smart=smart)
+        base = adjusted_sortino(
+            series, rf=rf, periods=periods, annualize=False, smart=smart
+        )
     else:
         raise ValueError(
             f"Invalid metric '{base}'. Must be one of: 'sharpe', 'sortino', or 'adjusted_sortino'"
         )
 
-    # Calculate higher moments for adjustment
+    # Calculate higher moments for adjustment. kurtosis() returns *excess*
+    # kurtosis; the estimator below is defined on raw kurtosis (3 under
+    # normality), so convert rather than subtracting 3 a second time.
     skew_no = skew(series, prepare_returns=False)
-    kurtosis_no = kurtosis(series, prepare_returns=False)
+    kurtosis_no = kurtosis(series, prepare_returns=False) + 3
 
     n = len(series)
 
-    # Calculate standard error of the ratio incorporating higher moments
-    # Formula accounts for skewness and kurtosis effects on ratio distribution
+    # Standard error of the ratio (Bailey & Lopez de Prado, 2012). Reduces to
+    # Lo's (1 + SR^2 / 2) / (n - 1) for normally distributed returns.
     sigma_sr = _np.sqrt(
-        (1 + (0.5 * base**2) - (skew_no * base) + (((kurtosis_no - 3) / 4) * base**2))
-        / (n - 1)
+        (1 - (skew_no * base) + (((kurtosis_no - 1) / 4) * base**2)) / (n - 1)
     )
 
-    # Calculate standardized ratio and convert to probability
-    ratio = (base - rf) / sigma_sr
-    psr = _norm.cdf(ratio)
-
-    # Annualize if requested
-    if annualize:
-        return psr * (252**0.5)
+    # Probability that the true ratio is greater than zero
+    psr = _norm.cdf(base / sigma_sr)
 
     return psr
 
@@ -1274,7 +1384,8 @@ def probabilistic_sharpe_ratio(
         series (pd.Series): Return series to analyze
         rf (float): Risk-free rate (annualized, default: 0.0)
         periods (int): Periods per year for annualization (default: 252)
-        annualize (bool): Whether to annualize the result (default: False)
+        annualize (bool): Deprecated and ignored. A probability has no
+            annualized form (default: False)
         smart (bool): Whether to apply autocorrelation penalty (default: False)
 
     Returns:
@@ -1303,7 +1414,8 @@ def probabilistic_sortino_ratio(
         series (pd.Series): Return series to analyze
         rf (float): Risk-free rate (annualized, default: 0.0)
         periods (int): Periods per year for annualization (default: 252)
-        annualize (bool): Whether to annualize the result (default: False)
+        annualize (bool): Deprecated and ignored. A probability has no
+            annualized form (default: False)
         smart (bool): Whether to apply autocorrelation penalty (default: False)
 
     Returns:
@@ -1332,7 +1444,8 @@ def probabilistic_adjusted_sortino_ratio(
         series (pd.Series): Return series to analyze
         rf (float): Risk-free rate (annualized, default: 0.0)
         periods (int): Periods per year for annualization (default: 252)
-        annualize (bool): Whether to annualize the result (default: False)
+        annualize (bool): Deprecated and ignored. A probability has no
+            annualized form (default: False)
         smart (bool): Whether to apply autocorrelation penalty (default: False)
 
     Returns:
@@ -1426,12 +1539,16 @@ def omega(
 
     # Validate minimum data requirements
     if len(returns) < 2:
-        warn("Insufficient data for omega ratio calculation (need at least 2 returns), returning NaN", stacklevel=2)
+        warn(
+            "Insufficient data for omega ratio calculation (need at least 2 returns), returning NaN"
+        )
         return _np.nan
 
     # Validate required return parameter
     if required_return <= -1:
-        warn(f"Invalid required_return ({required_return}) for omega ratio, must be > -1, returning NaN", stacklevel=2)
+        warn(
+            f"Invalid required_return ({required_return}) for omega ratio, must be > -1, returning NaN"
+        )
         return _np.nan
 
     # Prepare returns (subtract risk-free rate if applicable)
@@ -1487,9 +1604,20 @@ def gain_to_pain_ratio(returns, rf=0, resolution="D"):
 
     Note:
         See here for more info: https://archive.is/wip/2rwFW
+    Note:
+        Computed from the return series, not from discrete trades. A single
+        multi-day trade spanning three up days and two down days counts as
+        three wins and two losses here. This is well defined and useful for
+        systematic strategies with regular rebalancing, but it will not match
+        trade-level statistics from a discretionary trading journal. See
+        "Period-Based vs Trade-Based Metrics" in the README.
     """
-    # Prepare returns and resample to specified frequency
-    returns = _utils._prepare_returns(returns, rf).resample(resolution).sum()
+    # Prepare returns and resample to specified frequency. `rf` is accepted
+    # for API compatibility but is deliberately not subtracted here, matching
+    # long-standing behaviour.
+    returns = safe_resample(
+        _utils._prepare_returns(returns, rf, apply_rf=False), resolution, "sum"
+    )
 
     # Calculate absolute sum of negative returns (pain)
     downside = abs(returns[returns < 0].sum())
@@ -1534,8 +1662,9 @@ def cagr(
     """
     validate_input(returns)
 
-    # Prepare returns (subtract risk-free rate if applicable)
-    total = _utils._prepare_returns(returns, rf)
+    # `rf` is accepted for API compatibility but is not subtracted here,
+    # matching long-standing behaviour.
+    total = _utils._prepare_returns(returns, rf, apply_rf=False)
 
     # Calculate total return
     if compounded:
@@ -1546,10 +1675,17 @@ def cagr(
     # Calculate time period in years using trading periods
     # This is consistent with how Sharpe, Sortino, and other metrics
     # handle annualization in quantstats
-    years = len(returns) / periods
+    years = returns.count() / periods
 
-    # Calculate CAGR using geometric mean formula
-    res = abs(total + 1.0) ** (1.0 / years) - 1
+    # Geometric growth rate. Terminal wealth below zero is reachable with
+    # compounded=False once summed returns pass -100%; it has no real-valued
+    # growth rate, so report NaN. Taking abs() here used to turn a total
+    # wipeout into a positive CAGR.
+    wealth = _np.asarray(total + 1.0, dtype=float)
+    with _np.errstate(invalid="ignore"):
+        res = _np.where(wealth < 0, _np.nan, _np.abs(wealth) ** (1.0 / years) - 1)
+    if res.ndim == 0:
+        res = float(res)
 
     # Handle DataFrame input
     if isinstance(returns, _pd.DataFrame):
@@ -1559,7 +1695,7 @@ def cagr(
     return res
 
 
-def rar(returns, rf=0.0, periods=252):
+def rar(returns, rf=0.0, periods=252, compounded=True):
     """
     Calculate the Risk-Adjusted Return (RAR).
 
@@ -1570,7 +1706,10 @@ def rar(returns, rf=0.0, periods=252):
     Args:
         returns (pd.Series): Return series to analyze
         rf (float): Risk-free rate (annualized, default: 0.0)
-        periods (int): Periods per year for CAGR annualization (default: 252)
+        periods (int): Periods per year, used to de-annualize `rf`
+            (default: 252)
+        compounded (bool): Whether to compound returns (default: True).
+            Set to False for intraday or other non-compounded return streams.
 
     Returns:
         float: Risk-adjusted return
@@ -1580,11 +1719,16 @@ def rar(returns, rf=0.0, periods=252):
         >>> rar_value = rar(returns)
         >>> print(f"Risk-adjusted return: {rar_value:.4f}")
     """
-    # Prepare returns (subtract risk-free rate if applicable)
-    returns = _utils._prepare_returns(returns, rf)
+    # Prepare returns (subtract risk-free rate if applicable).
+    #
+    # `periods` has to reach _prepare_returns: without it the *annual* rf is
+    # subtracted from every single period, so at a daily frequency a 5% rate
+    # removes 5% per day and the series is wiped out. That reported a
+    # risk-adjusted return of -100% for any call with a non-zero rf.
+    returns = _utils._prepare_returns(returns, rf, periods)
 
     # Calculate CAGR and divide by exposure time
-    return cagr(returns, periods=periods) / exposure(returns)
+    return cagr(returns, compounded=compounded, periods=periods) / exposure(returns)
 
 
 def skew(returns, prepare_returns=True):
@@ -1644,6 +1788,7 @@ def kurtosis(returns, prepare_returns=True):
 def calmar(
     returns: Returns,
     prepare_returns: bool = True,
+    compounded: bool = True,
     periods: int = 252,
 ) -> float:
     """
@@ -1656,6 +1801,8 @@ def calmar(
     Args:
         returns (pd.Series): Return series to analyze
         prepare_returns (bool): Whether to prepare returns first (default: True)
+        compounded (bool): Whether to compound returns (default: True).
+            Set to False for intraday or other non-compounded return streams.
         periods (int): Periods per year for annualization (default: 252)
 
     Returns:
@@ -1672,7 +1819,7 @@ def calmar(
         returns = _utils._prepare_returns(returns)
 
     # Calculate CAGR and maximum drawdown
-    cagr_ratio = cagr(returns, periods=periods)
+    cagr_ratio = cagr(returns, compounded=compounded, periods=periods)
     max_dd = max_drawdown(returns)
 
     # Return ratio of CAGR to absolute maximum drawdown
@@ -1801,10 +1948,14 @@ def serenity_index(returns, rf=0):
         ulcer_val = ulcer_index(returns)
 
         # Handle cases where these might return Series/array
-        if hasattr(cvar_val, '__len__') and len(cvar_val) == 1:
-            cvar_val = float(cvar_val.iloc[0] if hasattr(cvar_val, 'iloc') else cvar_val[0])
-        if hasattr(ulcer_val, '__len__') and len(ulcer_val) == 1:
-            ulcer_val = float(ulcer_val.iloc[0] if hasattr(ulcer_val, 'iloc') else ulcer_val[0])
+        if hasattr(cvar_val, "__len__") and len(cvar_val) == 1:
+            cvar_val = float(
+                cvar_val.iloc[0] if hasattr(cvar_val, "iloc") else cvar_val[0]
+            )
+        if hasattr(ulcer_val, "__len__") and len(ulcer_val) == 1:
+            ulcer_val = float(
+                ulcer_val.iloc[0] if hasattr(ulcer_val, "iloc") else ulcer_val[0]
+            )
 
         pitfall = -cvar_val / std_returns
         denominator = ulcer_val * pitfall
@@ -1841,7 +1992,7 @@ def risk_of_ruin(returns, prepare_returns=True):
     wins = win_rate(returns)
 
     # Calculate risk of ruin using gambler's ruin formula
-    return ((1 - wins) / (1 + wins)) ** len(returns)
+    return ((1 - wins) / (1 + wins)) ** returns.count()
 
 
 def ror(returns):
@@ -1920,11 +2071,24 @@ def var(returns, sigma=1, confidence=0.95, prepare_returns=True):
     return value_at_risk(returns, sigma, confidence, prepare_returns)
 
 
+def _gaussian_expected_shortfall(mu: float, sd: float, alpha: float) -> float:
+    """
+    Closed-form expected shortfall of a normal distribution.
+
+    Returns E[X | X <= VaR_alpha] for X ~ N(mu, sd), which is the estimator
+    that belongs with value_at_risk()'s variance-covariance method.
+    """
+    if sd == 0 or _np.isnan(sd):
+        return mu
+    return mu - sd * _norm.pdf(_norm.ppf(alpha)) / alpha
+
+
 def conditional_value_at_risk(
     returns: Returns,
     sigma: float = 1,
     confidence: float = 0.95,
     prepare_returns: bool = True,
+    method: str = "parametric",
 ) -> float | _pd.Series:
     """
     Calculate the Conditional Value at Risk (CVaR), also known as Expected Shortfall.
@@ -1938,39 +2102,53 @@ def conditional_value_at_risk(
         sigma (float): Volatility multiplier (default: 1)
         confidence (float): Confidence level (0.95 = 95%, default: 0.95)
         prepare_returns (bool): Whether to prepare returns first (default: True)
+        method (str): "parametric" (default) matches value_at_risk() and uses
+            the closed-form normal expected shortfall. "historical" averages
+            the observations at or below the empirical quantile, which
+            captures fat tails but needs enough data to be meaningful.
 
     Returns:
         float: Conditional Value at Risk (expected loss beyond VaR)
+
+    Note:
+        Before 0.0.83 this took the threshold from the *parametric* VaR and
+        then averaged the observations below it, mixing two estimators. When
+        no observation fell below the threshold it returned the VaR itself,
+        which overstates CVaR, since CVaR is by definition at least as severe
+        as VaR. Both modes here are internally consistent, and an undefined
+        tail now returns NaN rather than the VaR.
 
     Example:
         >>> returns = pd.Series([0.01, -0.02, 0.03, -0.01, 0.02])
         >>> cvar_value = conditional_value_at_risk(returns, confidence=0.95)
         >>> print(f"95% CVaR: {cvar_value:.4f}")
     """
+    if method not in ("parametric", "historical"):
+        raise ValueError(f"method must be 'parametric' or 'historical', got {method!r}")
+
     if prepare_returns:
         returns = _utils._prepare_returns(returns)
 
-    # Handle both Series and DataFrame inputs
+    # Accept a confidence given as a percentage, matching value_at_risk()
+    if confidence > 1:
+        confidence = confidence / 100
+    alpha = 1 - confidence
+
+    def _cvar_of(series):
+        series = series.dropna()
+        if len(series) == 0:
+            return _np.nan
+        if method == "historical":
+            tail = series[series <= series.quantile(alpha)]
+            return tail.mean() if len(tail) > 0 else _np.nan
+        return _gaussian_expected_shortfall(series.mean(), sigma * series.std(), alpha)
+
     if isinstance(returns, _pd.DataFrame):
-        # For DataFrame, calculate CVaR for each column separately
-        result = {}
-        for col in returns.columns:
-            col_returns = returns[col]
-            # Calculate VaR for this specific column
-            col_var = value_at_risk(col_returns, sigma, confidence, prepare_returns=False)
-            below_var = col_returns[col_returns < col_var]
-            c_var_col = below_var.mean() if len(below_var) > 0 else _np.nan
-            result[col] = c_var_col if not _np.isnan(c_var_col) else col_var
-        return _pd.Series(result)
-    else:
-        # For Series, calculate VaR threshold
-        var = value_at_risk(returns, sigma, confidence)
-        c_var = returns[returns < var].values.mean()
-        # Return CVaR if valid, otherwise return VaR
-        return c_var if ~_np.isnan(c_var) else var
+        return _pd.Series({col: _cvar_of(returns[col]) for col in returns.columns})
+    return _cvar_of(returns)
 
 
-def cvar(returns, sigma=1, confidence=0.95, prepare_returns=True):
+def cvar(returns, sigma=1, confidence=0.95, prepare_returns=True, method="parametric"):
     """
     Calculate the Conditional Value at Risk (CVaR).
 
@@ -1982,14 +2160,17 @@ def cvar(returns, sigma=1, confidence=0.95, prepare_returns=True):
         sigma (float): Volatility multiplier (default: 1)
         confidence (float): Confidence level (0.95 = 95%, default: 0.95)
         prepare_returns (bool): Whether to prepare returns first (default: True)
+        method (str): "parametric" (default) or "historical"
 
     Returns:
         float: Conditional Value at Risk
     """
-    return conditional_value_at_risk(returns, sigma, confidence, prepare_returns)
+    return conditional_value_at_risk(
+        returns, sigma, confidence, prepare_returns, method
+    )
 
 
-def expected_shortfall(returns, sigma=1, confidence=0.95):
+def expected_shortfall(returns, sigma=1, confidence=0.95, method="parametric"):
     """
     Calculate the Expected Shortfall (ES), also known as CVaR.
 
@@ -2000,11 +2181,12 @@ def expected_shortfall(returns, sigma=1, confidence=0.95):
         returns (pd.Series): Return series to analyze
         sigma (float): Volatility multiplier (default: 1)
         confidence (float): Confidence level (0.95 = 95%, default: 0.95)
+        method (str): "parametric" (default) or "historical"
 
     Returns:
         float: Expected Shortfall
     """
-    return conditional_value_at_risk(returns, sigma, confidence)
+    return conditional_value_at_risk(returns, sigma, confidence, method=method)
 
 
 def tail_ratio(returns, cutoff=0.95, prepare_returns=True):
@@ -2041,7 +2223,11 @@ def tail_ratio(returns, cutoff=0.95, prepare_returns=True):
         # Handle DataFrame input - apply element-wise
         result = _pd.Series(index=upper_quantile.index, dtype=float)
         for col in upper_quantile.index:
-            if _pd.isna(upper_quantile[col]) or _pd.isna(lower_quantile[col]) or lower_quantile[col] == 0:
+            if (
+                _pd.isna(upper_quantile[col])
+                or _pd.isna(lower_quantile[col])
+                or lower_quantile[col] == 0
+            ):
                 result[col] = _np.nan
             else:
                 result[col] = abs(upper_quantile[col] / lower_quantile[col])
@@ -2072,6 +2258,13 @@ def payoff_ratio(returns, prepare_returns=True):
         >>> returns = pd.Series([0.01, -0.02, 0.03, -0.01, 0.02])
         >>> payoff_r = payoff_ratio(returns)
         >>> print(f"Payoff ratio: {payoff_r:.4f}")
+    Note:
+        Computed from the return series, not from discrete trades. A single
+        multi-day trade spanning three up days and two down days counts as
+        three wins and two losses here. This is well defined and useful for
+        systematic strategies with regular rebalancing, but it will not match
+        trade-level statistics from a discretionary trading journal. See
+        "Period-Based vs Trade-Based Metrics" in the README.
     """
     if prepare_returns:
         returns = _utils._prepare_returns(returns)
@@ -2105,6 +2298,13 @@ def win_loss_ratio(returns, prepare_returns=True):
 
     Returns:
         float: Win-loss ratio
+    Note:
+        Computed from the return series, not from discrete trades. A single
+        multi-day trade spanning three up days and two down days counts as
+        three wins and two losses here. This is well defined and useful for
+        systematic strategies with regular rebalancing, but it will not match
+        trade-level statistics from a discretionary trading journal. See
+        "Period-Based vs Trade-Based Metrics" in the README.
     """
     return payoff_ratio(returns, prepare_returns)
 
@@ -2127,6 +2327,13 @@ def profit_ratio(returns, prepare_returns=True):
         >>> returns = pd.Series([0.01, -0.02, 0.03, -0.01, 0.02])
         >>> profit_r = profit_ratio(returns)
         >>> print(f"Profit ratio: {profit_r:.4f}")
+    Note:
+        Computed from the return series, not from discrete trades. A single
+        multi-day trade spanning three up days and two down days counts as
+        three wins and two losses here. This is well defined and useful for
+        systematic strategies with regular rebalancing, but it will not match
+        trade-level statistics from a discretionary trading journal. See
+        "Period-Based vs Trade-Based Metrics" in the README.
     """
     if prepare_returns:
         returns = _utils._prepare_returns(returns)
@@ -2179,6 +2386,13 @@ def profit_factor(returns, prepare_returns=True):
         >>> returns = pd.Series([0.01, -0.02, 0.03, -0.01, 0.02])
         >>> pf = profit_factor(returns)
         >>> print(f"Profit factor: {pf:.4f}")
+    Note:
+        Computed from the return series, not from discrete trades. A single
+        multi-day trade spanning three up days and two down days counts as
+        three wins and two losses here. This is well defined and useful for
+        systematic strategies with regular rebalancing, but it will not match
+        trade-level statistics from a discretionary trading journal. See
+        "Period-Based vs Trade-Based Metrics" in the README.
     """
     if prepare_returns:
         returns = _utils._prepare_returns(returns)
@@ -2196,7 +2410,7 @@ def profit_factor(returns, prepare_returns=True):
     else:
         # Handle division by zero case
         if losses_sum == 0:
-            return 0.0 if wins_sum == 0 else float('inf')
+            return 0.0 if wins_sum == 0 else float("inf")
         return wins_sum / losses_sum
 
 
@@ -2219,6 +2433,13 @@ def cpc_index(returns, prepare_returns=True):
         >>> returns = pd.Series([0.01, -0.02, 0.03, -0.01, 0.02])
         >>> cpc = cpc_index(returns)
         >>> print(f"CPC Index: {cpc:.4f}")
+    Note:
+        Computed from the return series, not from discrete trades. A single
+        multi-day trade spanning three up days and two down days counts as
+        three wins and two losses here. This is well defined and useful for
+        systematic strategies with regular rebalancing, but it will not match
+        trade-level statistics from a discretionary trading journal. See
+        "Period-Based vs Trade-Based Metrics" in the README.
     """
     if prepare_returns:
         returns = _utils._prepare_returns(returns)
@@ -2245,6 +2466,13 @@ def common_sense_ratio(returns, prepare_returns=True):
         >>> returns = pd.Series([0.01, -0.02, 0.03, -0.01, 0.02])
         >>> csr = common_sense_ratio(returns)
         >>> print(f"Common Sense Ratio: {csr:.4f}")
+    Note:
+        Computed from the return series, not from discrete trades. A single
+        multi-day trade spanning three up days and two down days counts as
+        three wins and two losses here. This is well defined and useful for
+        systematic strategies with regular rebalancing, but it will not match
+        trade-level statistics from a discretionary trading journal. See
+        "Period-Based vs Trade-Based Metrics" in the README.
     """
     if prepare_returns:
         returns = _utils._prepare_returns(returns)
@@ -2408,46 +2636,42 @@ def risk_return_ratio(returns, prepare_returns=True):
         return returns.mean() / std
 
 
-def _get_baseline_value(prices):
+def _get_baseline_value(prices, from_returns):
     """
     Determine the appropriate baseline value for drawdown calculations.
 
-    This function analyzes the price series to determine the correct baseline
-    value that should represent "no drawdown" (i.e., the starting equity).
+    The baseline is the equity held immediately before the first observation,
+    so that a loss in the very first period is not hidden by treating that
+    period's close as the running peak.
+
+    Returns rebuilt by _prepare_prices() are priced as base * (1 + compsum)
+    with base 1.0, so 1.0 is exactly the equity they started from. A series
+    that was already prices carries no such earlier point: its first
+    observation *is* the start of the record, and any other baseline invents
+    a peak the portfolio never reached. The previous implementation guessed
+    from the price level (>1000 -> 1e5, >10 -> 100.0), which reported a 50%
+    drawdown for a $50 stock and 95% for a $5000 one.
 
     Args:
-        prices (pd.Series): Price series
+        prices (pd.Series | pd.DataFrame): Price series
+        from_returns (bool | pd.Series): Whether the prices were rebuilt from
+            returns; per column for DataFrame input
 
     Returns:
-        float: Baseline value for drawdown calculations
+        float | pd.Series: Baseline value(s) for drawdown calculations
     """
     if len(prices) == 0:
         return 1.0
 
-    # Handle both Series and DataFrame cases
     if isinstance(prices, _pd.DataFrame):
-        # If prices is a DataFrame, ensure it has at least one column
         if prices.shape[1] == 0:
             return 1.0  # Default baseline for empty DataFrame with no columns
-        # Get the first value of the first column
-        first_price = prices.iat[0, 0]
-    else:
-        # If prices is a Series, get the first value directly
-        first_price = prices.iloc[0]
+        # Baseline per column, since columns may be on different scales
+        converted = _pd.Series(from_returns, index=prices.columns, dtype=bool)
+        return prices.iloc[0].mask(converted, 1.0)
 
-    # If the first price is much larger than 1, it's likely from to_prices conversion
-    # The to_prices function uses base * (1 + compsum), so we determine the appropriate baseline
-    if first_price > 1000:
-        # This suggests it came from to_prices with a large base (default 1e5)
-        # However, we should use a more reasonable baseline for drawdown calculations
-        # We'll use the same scale as the prices but represent the "no loss" baseline
-        return 1e5
-    elif first_price > 10:
-        # Smaller base value scale
-        return 100.0
-    else:
-        # Normal price scale, use 1.0 as baseline
-        return 1.0
+    # For a Series, the first value is the start of the record
+    return 1.0 if bool(from_returns) else prices.iloc[0]
 
 
 def max_drawdown(prices: Returns) -> float:
@@ -2471,6 +2695,10 @@ def max_drawdown(prices: Returns) -> float:
     """
     validate_input(prices)
 
+    # Record whether these were returns *before* the conversion, so the
+    # baseline below knows if there is a known starting equity
+    from_returns = _utils._looks_like_returns(prices)
+
     # Prepare prices (convert from returns if needed)
     prices = _utils._prepare_prices(prices)
 
@@ -2487,7 +2715,7 @@ def max_drawdown(prices: Returns) -> float:
     phantom_date = prices.index[0] - time_delta
 
     # Determine appropriate baseline value
-    baseline_value = _get_baseline_value(prices)
+    baseline_value = _get_baseline_value(prices, from_returns)
 
     # Create extended series with phantom baseline
     extended_prices = prices.copy()
@@ -2519,6 +2747,9 @@ def to_drawdown_series(returns):
     """
     validate_input(returns)
 
+    # Record whether these were returns *before* the conversion
+    from_returns = _utils._looks_like_returns(returns)
+
     # Convert returns to prices
     prices = _utils._prepare_prices(returns)
 
@@ -2535,7 +2766,7 @@ def to_drawdown_series(returns):
     phantom_date = prices.index[0] - time_delta
 
     # Determine appropriate baseline value
-    baseline_value = _get_baseline_value(prices)
+    baseline_value = _get_baseline_value(prices, from_returns)
 
     # Create extended series with phantom baseline
     extended_prices = prices.copy()
@@ -2557,6 +2788,20 @@ def kelly_criterion(returns, prepare_returns=True):
     Calculates the recommended maximum amount of capital that
     should be allocated to the given strategy, based on the
     Kelly Criterion (http://en.wikipedia.org/wiki/Kelly_criterion)
+
+    Returns the classic fixed-odds fraction f* = p - q/b, where p is the
+    win rate, q = 1 - p, and b the payoff ratio (average win / average loss).
+    The result is a fraction of capital, in a range a reader can act on.
+
+    Note:
+        0.0.82 to 0.0.83 divided this by the average-loss magnitude on the
+        argument that a fraction which does not move when the return series
+        is rescaled must be wrong. That quantity is the growth-optimal
+        *leverage* for a per-period P&L, not the Kelly fraction: on daily
+        returns it reaches double and triple digits, and reports showed
+        figures like 3716% where this formula reads 21% (issue #552). The
+        fixed-odds fraction depends only on the odds by construction, so
+        its scale-invariance is a property, not a defect. Reverted in 0.0.84.
     """
     if prepare_returns:
         returns = _utils._prepare_returns(returns)
@@ -2608,10 +2853,12 @@ def r_squared(returns, benchmark, prepare_returns=True):
     # Prepare benchmark to match returns index
     benchmark = _utils._prepare_benchmark(benchmark, returns.index)
 
+    # Estimate over the dates on which both series were observed; linregress
+    # returns NaN for the whole fit if either input contains a gap.
+    paired_returns, paired_benchmark = _paired_observations(returns, benchmark)
+
     # Perform linear regression and extract correlation coefficient
-    _, _, r_val, _, _ = _linregress(
-        returns, _utils._prepare_benchmark(benchmark, returns.index)
-    )
+    _, _, r_val, _, _ = _linregress(paired_returns, paired_benchmark)
 
     # Square the correlation coefficient to get R-squared
     return r_val**2
@@ -2663,15 +2910,17 @@ def information_ratio(returns, benchmark, prepare_returns=True):
     # Prepare benchmark to match returns index
     benchmark = _utils._prepare_benchmark(benchmark, returns.index)
 
-    # Calculate active returns (returns - benchmark)
-    diff_rets = returns - _utils._prepare_benchmark(benchmark, returns.index)
+    # Calculate active returns (returns - benchmark). The already-prepared
+    # benchmark is used directly; preparing it a second time here re-ran the
+    # price/return detection on data that had just been normalized.
+    diff_rets = returns - benchmark
 
     # Calculate tracking error (standard deviation of active returns)
     std = diff_rets.std()
 
     # Return Information Ratio (active return / tracking error)
     if std != 0:
-        return diff_rets.mean() / diff_rets.std()
+        return diff_rets.mean() / std
     return 0
 
 
@@ -2704,6 +2953,12 @@ def greeks(returns, benchmark, periods=252.0, prepare_returns=True):
         returns = _utils._prepare_returns(returns)
     benchmark = _utils._prepare_benchmark(benchmark, returns.index)
     # ----------------------------
+
+    # Estimate over the dates on which both series were observed. np.cov
+    # propagates NaN, so a single gap on either side would otherwise reduce
+    # beta and alpha to NaN, which the .fillna(0) below turns into a
+    # confident-looking zero.
+    returns, benchmark = _paired_observations(returns, benchmark)
 
     # Calculate covariance matrix between returns and benchmark
     matrix = _np.cov(returns, benchmark)
@@ -2774,8 +3029,14 @@ def rolling_greeks(returns, benchmark, periods=252, prepare_returns=True):
     # Calculate rolling beta (protect against division by zero)
     beta = corr * std["returns"] / std["benchmark"].replace(0, _np.nan)
 
-    # Calculate rolling alpha (not annualized for rolling version)
-    alpha = df["returns"].mean() - beta * df["benchmark"].mean()
+    # Calculate rolling alpha (not annualized for rolling version).
+    #
+    # The intercept of a window's regression uses that window's own means.
+    # Using the full-sample means gave every row the same baseline, so
+    # rolling alpha only moved when rolling beta did and did not match a
+    # regression fitted on the window.
+    means = df.rolling(int(periods)).mean()
+    alpha = means["returns"] - beta * means["benchmark"]
 
     # Return DataFrame with rolling Greeks
     return _pd.DataFrame(index=returns.index, data={"beta": beta, "alpha": alpha})
@@ -2820,31 +3081,28 @@ def compare(
     # Normalize timezone for returns to ensure consistent comparisons
     # Convert to UTC if timezone-aware, then make naive
     # This must happen before prepare_returns to avoid issues
-    if hasattr(returns.index, 'tz') and returns.index.tz is not None:
-        returns = returns.tz_convert('UTC').tz_localize(None)
+    if hasattr(returns.index, "tz") and returns.index.tz is not None:
+        returns = returns.tz_convert("UTC").tz_localize(None)
 
     if prepare_returns:
         returns = _utils._prepare_returns(returns)
 
     # Normalize benchmark timezone first if it's not a string
-    if (
-        benchmark is not None
-        and not isinstance(benchmark, str)
-        and hasattr(
+    if benchmark is not None and not isinstance(benchmark, str):
+        if hasattr(
             benchmark.index
             if isinstance(benchmark, _pd.Series)
             else benchmark[benchmark.columns[0]].index,
             "tz",
-        )
-    ):
-        if isinstance(benchmark, _pd.Series) and benchmark.index.tz is not None:
-            benchmark = benchmark.tz_convert("UTC").tz_localize(None)
-        elif (
-            isinstance(benchmark, _pd.DataFrame)
-            and benchmark[benchmark.columns[0]].index.tz is not None
         ):
-            for col in benchmark.columns:
-                benchmark[col] = benchmark[col].tz_convert("UTC").tz_localize(None)
+            if isinstance(benchmark, _pd.Series) and benchmark.index.tz is not None:
+                benchmark = benchmark.tz_convert("UTC").tz_localize(None)
+            elif (
+                isinstance(benchmark, _pd.DataFrame)
+                and benchmark[benchmark.columns[0]].index.tz is not None
+            ):
+                for col in benchmark.columns:
+                    benchmark[col] = benchmark[col].tz_convert("UTC").tz_localize(None)
 
     # Store original benchmark for proper aggregation
     # This preserves returns that may fall on non-trading days
@@ -2856,8 +3114,12 @@ def compare(
         benchmark_original = benchmark.copy() if benchmark is not None else None
 
     # Normalize timezone for benchmark_original as well (in case it was downloaded)
-    if benchmark_original is not None and hasattr(benchmark_original.index, 'tz') and benchmark_original.index.tz is not None:
-        benchmark_original = benchmark_original.tz_convert('UTC').tz_localize(None)
+    if (
+        benchmark_original is not None
+        and hasattr(benchmark_original.index, "tz")
+        and benchmark_original.index.tz is not None
+    ):
+        benchmark_original = benchmark_original.tz_convert("UTC").tz_localize(None)
 
     # Prepare benchmark to match returns index for other calculations
     benchmark = _utils._prepare_benchmark(benchmark, returns.index)
@@ -2867,9 +3129,14 @@ def compare(
         # Aggregate returns and use original benchmark for aggregation
         # This ensures we don't lose benchmark returns on non-trading days
         if benchmark_original is not None:
-            benchmark_agg = _utils.aggregate_returns(benchmark_original, aggregate, compounded) * 100
+            benchmark_agg = (
+                _utils.aggregate_returns(benchmark_original, aggregate, compounded)
+                * 100
+            )
         else:
-            benchmark_agg = _utils.aggregate_returns(benchmark, aggregate, compounded) * 100
+            benchmark_agg = (
+                _utils.aggregate_returns(benchmark, aggregate, compounded) * 100
+            )
         returns_agg = _utils.aggregate_returns(returns, aggregate, compounded) * 100
 
         # Create comparison DataFrame
@@ -2890,16 +3157,23 @@ def compare(
         # Aggregate benchmark using original data to preserve non-trading day returns
         if benchmark_original is not None:
             bench = {
-                "Benchmark": _utils.aggregate_returns(benchmark_original, aggregate, compounded) * 100
+                "Benchmark": _utils.aggregate_returns(
+                    benchmark_original, aggregate, compounded
+                )
+                * 100
             }
         else:
             bench = {
-                "Benchmark": _utils.aggregate_returns(benchmark, aggregate, compounded) * 100
+                "Benchmark": _utils.aggregate_returns(benchmark, aggregate, compounded)
+                * 100
             }
 
         # Aggregate each strategy column
         strategy = {
-            "Returns_" + str(i): _utils.aggregate_returns(returns[col], aggregate, compounded) * 100
+            "Returns_" + str(i): _utils.aggregate_returns(
+                returns[col], aggregate, compounded
+            )
+            * 100
             for i, col in enumerate(returns.columns)
         }
 
@@ -2975,8 +3249,18 @@ def monthly_returns(returns, eoy=True, compounded=True, prepare_returns=True):
 
     # Ensure all months are present in the DataFrame
     for month in [
-        "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-        "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+        "Jan",
+        "Feb",
+        "Mar",
+        "Apr",
+        "May",
+        "Jun",
+        "Jul",
+        "Aug",
+        "Sep",
+        "Oct",
+        "Nov",
+        "Dec",
     ]:
         if month not in returns.columns:
             returns.loc[:, month] = 0
@@ -2984,15 +3268,27 @@ def monthly_returns(returns, eoy=True, compounded=True, prepare_returns=True):
     # Order columns by calendar month
     returns = returns[
         [
-            "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-            "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+            "Jan",
+            "Feb",
+            "Mar",
+            "Apr",
+            "May",
+            "Jun",
+            "Jul",
+            "Aug",
+            "Sep",
+            "Oct",
+            "Nov",
+            "Dec",
         ]
     ]
 
     # Add end-of-year totals if requested
     if eoy:
         returns["eoy"] = _utils.group_returns(
-            original_returns, original_returns.index.year, compounded=compounded  # type: ignore
+            original_returns,
+            original_returns.index.year,
+            compounded=compounded,  # type: ignore
         ).values
 
     # Format column names to uppercase
@@ -3074,7 +3370,7 @@ def drawdown_details(drawdown):
         data = []
         for i, _ in enumerate(starts):
             # Extract drawdown for this period
-            dd = drawdown[starts[i]:ends[i]]
+            dd = drawdown[starts[i] : ends[i]]
 
             # Calculate 99% drawdown (excluding outliers)
             clean_dd = -remove_outliers(-dd, 0.99)
@@ -3082,12 +3378,12 @@ def drawdown_details(drawdown):
             # Compile statistics for this drawdown period
             data.append(
                 (
-                    starts[i],                          # Start date
-                    dd.idxmin(),                       # Valley date (max drawdown)
-                    ends[i],                           # End date
-                    (ends[i] - starts[i]).days + 1,   # Duration in days
-                    dd.min() * 100,                    # Max drawdown %
-                    clean_dd.min() * 100,              # 99% max drawdown %
+                    starts[i],  # Start date
+                    dd.idxmin(),  # Valley date (max drawdown)
+                    ends[i],  # End date
+                    (ends[i] - starts[i]).days + 1,  # Duration in days
+                    dd.min() * 100,  # Max drawdown %
+                    clean_dd.min() * 100,  # 99% max drawdown %
                 )
             )
 

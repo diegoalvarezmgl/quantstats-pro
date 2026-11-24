@@ -45,6 +45,7 @@ def _get_stats():
     global _stats
     if _stats is None:
         from .. import stats
+
         _stats = stats
     return _stats
 
@@ -53,6 +54,7 @@ def _get_utils():
     global _utils
     if _utils is None:
         from .. import utils
+
         _utils = utils
     return _utils
 
@@ -189,7 +191,12 @@ def snapshot(
     # Select color scheme based on grayscale preference
     colors = _GRAYSCALE_COLORS if grayscale else _FLATUI_COLORS
     # Convert to portfolio format and calculate percentage changes
-    returns = _get_utils().make_portfolio(returns.dropna(), 1, mode).pct_change(fill_method=None).fillna(0)
+    returns = (
+        _get_utils()
+        .make_portfolio(returns.dropna(), 1, mode)
+        .pct_change(fill_method=None)
+        .fillna(0)
+    )
 
     # Use current figure size if not specified
     if figsize is None:
@@ -1736,7 +1743,9 @@ def monthly_heatmap(
     cmap = "gray" if grayscale else "RdYlGn"
 
     # Convert to monthly returns and convert to percentage
-    returns = _get_stats().monthly_returns(returns, eoy=eoy, compounded=compounded) * 100
+    returns = (
+        _get_stats().monthly_returns(returns, eoy=eoy, compounded=compounded) * 100
+    )
 
     # Calculate figure height based on number of years
     fig_height = len(returns) / 2.5
@@ -1778,7 +1787,8 @@ def monthly_heatmap(
         )
         # Calculate benchmark monthly returns
         benchmark = (
-            _get_stats().monthly_returns(benchmark, eoy=eoy, compounded=compounded) * 100
+            _get_stats().monthly_returns(benchmark, eoy=eoy, compounded=compounded)
+            * 100
         )
         # Calculate active returns (strategy - benchmark)
         active_returns = returns - benchmark

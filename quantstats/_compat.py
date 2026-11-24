@@ -25,11 +25,21 @@ NUMPY_VERSION = version.parse(np.__version__)
 # Frequency alias mapping for pandas compatibility
 # Starting from pandas 2.2.0, frequency aliases changed to be more explicit
 # M -> ME (Month End), Q -> QE (Quarter End), A/Y -> YE (Year End)
+_HAS_EXPLICIT_ALIASES = version.parse("2.2.0") <= PANDAS_VERSION
+
 FREQUENCY_ALIASES = {
-    "M": "ME" if version.parse("2.2.0") <= PANDAS_VERSION else "M",
-    "Q": "QE" if version.parse("2.2.0") <= PANDAS_VERSION else "Q",
-    "A": "YE" if version.parse("2.2.0") <= PANDAS_VERSION else "A",
-    "Y": "YE" if version.parse("2.2.0") <= PANDAS_VERSION else "Y",
+    "M": "ME" if _HAS_EXPLICIT_ALIASES else "M",
+    "Q": "QE" if _HAS_EXPLICIT_ALIASES else "Q",
+    "A": "YE" if _HAS_EXPLICIT_ALIASES else "A",
+    "Y": "YE" if _HAS_EXPLICIT_ALIASES else "Y",
+    "SM": "SME" if _HAS_EXPLICIT_ALIASES else "SM",
+    # The mapping also has to work in the other direction. Most of the
+    # codebase spells these the pandas 2.2 way already, and passing "ME" to a
+    # pandas older than 2.2 raises "Invalid frequency: ME".
+    "ME": "ME" if _HAS_EXPLICIT_ALIASES else "M",
+    "QE": "QE" if _HAS_EXPLICIT_ALIASES else "Q",
+    "YE": "YE" if _HAS_EXPLICIT_ALIASES else "Y",
+    "SME": "SME" if _HAS_EXPLICIT_ALIASES else "SM",
 }
 
 
@@ -82,17 +92,19 @@ def normalize_timezone(data: pd.Series | pd.DataFrame) -> pd.Series | pd.DataFra
     # If timezone aware, convert to UTC then make naive
     if data.index.tz is not None:
         result = data.copy()
-        result.index = result.index.tz_convert('UTC').tz_localize(None)
+        result.index = result.index.tz_convert("UTC").tz_localize(None)
         return result
 
     # Already timezone naive, return as is
     return data
 
 
-def safe_resample(data: pd.Series | pd.DataFrame,
-                  freq: str,
-                  func_name: str | Callable | None = None,
-                  **kwargs):
+def safe_resample(
+    data: pd.Series | pd.DataFrame,
+    freq: str,
+    func_name: str | Callable | None = None,
+    **kwargs,
+):
     """
     Safe resample operation that works with all pandas versions.
 
@@ -166,19 +178,22 @@ def safe_resample(data: pd.Series | pd.DataFrame,
         # For callable functions, use apply method
         # Suppress FutureWarning about callable usage - our use is intentional
         with warnings.catch_warnings():
-            warnings.filterwarnings("ignore", category=FutureWarning,
-                                    message=".*callable.*")
+            warnings.filterwarnings(
+                "ignore", category=FutureWarning, message=".*callable.*"
+            )
             result = resampler.apply(func_name, **kwargs)
 
     # Normalize timezone to ensure consistent comparisons
     return normalize_timezone(result)
 
 
-def safe_concat(objs: list[pd.Series | pd.DataFrame],
-                axis: int = 0,
-                ignore_index: bool = False,
-                sort: bool = False,
-                **kwargs) -> pd.Series | pd.DataFrame:
+def safe_concat(
+    objs: list[pd.Series | pd.DataFrame],
+    axis: int = 0,
+    ignore_index: bool = False,
+    sort: bool = False,
+    **kwargs,
+) -> pd.Series | pd.DataFrame:
     """
     Safe concatenation that handles pandas version differences.
 
@@ -211,10 +226,12 @@ def safe_concat(objs: list[pd.Series | pd.DataFrame],
     return pd.concat(objs, axis=axis, ignore_index=ignore_index, sort=sort, **kwargs)  # type: ignore[arg-type]
 
 
-def safe_append(df: pd.DataFrame,
-                other: pd.DataFrame | pd.Series,
-                ignore_index: bool = False,
-                sort: bool = False) -> pd.DataFrame:
+def safe_append(
+    df: pd.DataFrame,
+    other: pd.DataFrame | pd.Series,
+    ignore_index: bool = False,
+    sort: bool = False,
+) -> pd.DataFrame:
     """
     Safe append operation using pd.concat.
 
@@ -253,8 +270,9 @@ def safe_append(df: pd.DataFrame,
         return pd.DataFrame(result)
 
 
-def safe_frequency_conversion(data: pd.Series | pd.DataFrame,
-                              freq: str) -> pd.Series | pd.DataFrame:
+def safe_frequency_conversion(
+    data: pd.Series | pd.DataFrame, freq: str
+) -> pd.Series | pd.DataFrame:
     """
     Safe frequency conversion for time series data.
 
@@ -369,9 +387,9 @@ def get_string_accessor(series: pd.Series):
     return series.str
 
 
-def safe_yfinance_download(tickers: str | list[str],
-                           proxy: str | None = None,
-                           **kwargs) -> pd.DataFrame:
+def safe_yfinance_download(
+    tickers: str | list[str], proxy: str | None = None, **kwargs
+) -> pd.DataFrame:
     """
     Safe yfinance download that handles proxy configuration properly.
 
@@ -428,7 +446,9 @@ def safe_yfinance_download(tickers: str | list[str],
         # Handle case where yfinance returns None (network issues, invalid ticker, etc.)
         if result is None:
             # Return empty DataFrame with standard yfinance columns
-            return pd.DataFrame(columns=['Open', 'High', 'Low', 'Close', 'Volume', 'Adj Close'])
+            return pd.DataFrame(
+                columns=["Open", "High", "Low", "Close", "Volume", "Adj Close"]
+            )
 
         return result
 
