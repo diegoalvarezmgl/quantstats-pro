@@ -17,21 +17,22 @@ import numpy as np
 from .._compat import boxplot_compat_kwargs
 from . import analytics
 
-_PRIMARY = "#348dc1"
-_BAND = "#9bc4e2"
-_ACCENT = "#003366"
-_MEDIAN = "#c1431d"
-_HIST = "#1a1a1a"
+_PRIMARY = "#9aa1a8"
+_BAND = "#c9ced2"
+_ACCENT = "#14171a"
+_MEDIAN = "#14171a"
+_HIST = "#14171a"
+# Muted categorical palette for model lines; vermilion stays reserved.
 _PALETTE = [
-    "#348dc1",
-    "#c1431d",
-    "#6B9E00",
-    "#7b68ee",
-    "#e67e22",
-    "#16a085",
-    "#8e44ad",
-    "#2c3e50",
-    "#d35400",
+    "#0f4c5c",
+    "#8a5a00",
+    "#5c646c",
+    "#6b4e71",
+    "#3d6b4f",
+    "#4a6fa5",
+    "#9a6a4f",
+    "#2f3b45",
+    "#9aa1a8",
 ]
 
 

@@ -109,8 +109,8 @@ class TestHTMLReport:
                 assert (
                     "github.com/diegoalvarezmgl/quantstats-pro" in content
                 )
-                assert " at " in content
-                assert "table thead th{font-weight:700;background:#2d2d2d;color:#fff}" in content
+                assert 'class="masthead"' in content
+                assert "--signal:#c8321e" in content
         finally:
             if os.path.exists(output_path):
                 os.remove(output_path)

@@ -12,127 +12,215 @@ from .core import ValidityResult, _fmt_obs
 _SEVERITY_ORDER = {"warning": 0, "caution": 1, "info": 2}
 
 
+def _minus(text: str) -> str:
+    return text.replace("-", "−")
+
+
 def _pct(x: float | None, digits: int = 1) -> str:
-    return "–" if x is None or not math.isfinite(x) else f"{x * 100:.{digits}f}%"
+    if x is None or not math.isfinite(x):
+        return "–"
+    return _minus(f"{x * 100:.{digits}f}%")
 
 
 def _num(x: float | None, digits: int = 2) -> str:
-    return "–" if x is None or not math.isfinite(x) else f"{x:,.{digits}f}"
+    if x is None or not math.isfinite(x):
+        return "–"
+    return _minus(f"{x:,.{digits}f}")
 
 
-def _kpi(label: str, value: str, hint: str, tone: str = "") -> str:
+def _clamp(x: float) -> float:
+    return max(0.0, min(100.0, x))
+
+
+def _gauge(
+    fill: tuple[float, float] | None = None,
+    bar: float | None = None,
+    ref: float | None = None,
+    obs: float | None = None,
+) -> str:
+    """A track with a filled range and up to three ticks; positions in percent."""
+    parts = []
+    if fill is not None and all(math.isfinite(v) for v in fill):
+        left = _clamp(min(fill))
+        width = _clamp(max(fill)) - left
+        parts.append(
+            f'<span class="g-fill" style="left:{left:.1f}%;width:{width:.1f}%"></span>'
+        )
+    for cls, pos in (("g-obs", obs), ("g-ref", ref), ("g-bar", bar)):
+        if pos is not None and math.isfinite(pos):
+            parts.append(f'<span class="{cls}" style="left:{_clamp(pos):.1f}%"></span>')
+    return '<div class="gauge">' + "".join(parts) + "</div>"
+
+
+def _axis(lo: float, hi: float, pad: float = 0.1):
+    """Map a value to a percentage of an axis spanning lo..hi plus padding."""
+    span = hi - lo
+    if not math.isfinite(span) or span <= 0:
+        return lambda x: float("nan")
+    lo, span = lo - pad * span, span * (1 + 2 * pad)
+    return lambda x: (x - lo) / span * 100.0
+
+
+def _kpi(label: str, value: str, hint: str, tone: str = "", gauge: str = "") -> str:
     return (
         f'<div class="kpi {tone}"><div class="label">{label}</div>'
-        f'<div class="value">{value}</div><div class="hint">{hint}</div></div>'
+        f'<div class="value">{value}</div>{gauge}<div class="hint">{hint}</div></div>'
     )
 
 
-def _prob_tone(p: float, confidence: float) -> str:
-    if not math.isfinite(p):
-        return ""
-    if p >= confidence:
-        return "excellent"
-    if p >= 0.8:
-        return "good"
-    if p >= 0.5:
-        return "warning"
-    return "critical"
-
-
-def _table(header: list[str], rows: list[list[str]]) -> str:
+def _table(header: list[str], rows: list[list[str]], cls: str = "") -> str:
     head = "".join(f"<th>{h}</th>" for h in header)
     body = "".join(
         "<tr>" + "".join(f"<td>{c}</td>" for c in row) + "</tr>" for row in rows
     )
-    return f"<table><thead><tr>{head}</tr></thead><tbody>{body}</tbody></table>"
+    attr = f' class="{cls}"' if cls else ""
+    return f"<table{attr}><thead><tr>{head}</tr></thead><tbody>{body}</tbody></table>"
 
 
 def _kpis_html(res: ValidityResult) -> str:
-    s, b = res.sharpe, res.bootstrap
+    """Key figures, each drawn against the bar it has to clear, most telling first."""
+    s, b, d = res.sharpe, res.bootstrap, res.decay
     conf = b["confidence"]
     ci = b["sharpe"]
     n = res.sample["n"]
-    need = s["min_track_record_length_deflated"]
-    if not math.isfinite(need):
-        trl_tone = "critical"
-    elif need <= n:
-        trl_tone = "excellent"
+    figures = []
+
+    dsr = s["dsr"]
+    if not math.isfinite(dsr) or dsr >= conf:
+        tone = ""
     else:
-        trl_tone = "warning"
-    cards = [
-        _kpi(
-            "Sharpe (annualised)",
-            _num(s["sharpe_annual"]),
-            f"{conf:.0%} CI {_num(ci['low'])} to {_num(ci['high'])}",
-            "critical" if math.isfinite(ci["low"]) and ci["high"] <= 0 else "",
-        ),
-        _kpi(
-            "Probabilistic Sharpe",
-            _pct(s["psr"]),
-            "P(true Sharpe &gt; 0), one trial",
-            _prob_tone(s["psr"], conf),
-        ),
+        tone = "warning" if dsr >= 0.5 else "critical"
+    selection = (
+        f"after {s['n_trials']:,} trials, hurdle {_num(s['sharpe_hurdle_annual'])}"
+        if s["n_trials"] > 1
+        else "one trial, no selection discount"
+    )
+    figures.append(
         _kpi(
             "Deflated Sharpe",
-            _pct(s["dsr"]),
-            f"after {s['n_trials']:,} trial(s); hurdle "
-            f"{_num(s['sharpe_hurdle_annual'])}",
-            _prob_tone(s["dsr"], conf),
-        ),
-        _kpi(
-            "Track record needed",
-            _fmt_obs(need),
-            f"observations at {conf:.0%}; sample has {n:,}",
-            trl_tone,
-        ),
-    ]
-    if res.split is not None:
-        oos = res.split["out_of_sample"]
-        ins = res.split["in_sample"]
-        p = res.split["degradation_p_value"]
-        tone = (
-            "critical"
-            if oos["sharpe"] <= 0
-            else ("warning" if math.isfinite(p) and p < 1 - conf else "good")
+            _pct(dsr),
+            f"Bar at {conf:.0%} &middot; {selection}",
+            tone,
+            _gauge(fill=(0.0, dsr * 100.0), bar=conf * 100.0),
         )
-        cards.append(
+    )
+
+    if res.split is not None:
+        oos = res.split["out_of_sample"]["sharpe_annual"]
+        ins = res.split["in_sample"]["sharpe_annual"]
+        p = res.split["degradation_p_value"]
+        if math.isfinite(oos) and oos <= 0:
+            tone = "critical"
+        elif math.isfinite(p) and p < 1 - conf:
+            tone = "warning"
+        else:
+            tone = ""
+        reach = max(
+            [abs(v) for v in (ins, oos) if math.isfinite(v)] + [0.5]
+        )
+        at = _axis(-reach, reach)
+        figures.append(
             _kpi(
                 "Out-of-sample Sharpe",
-                _num(oos["sharpe_annual"]),
-                f"in-sample {_num(ins['sharpe_annual'])}; p={_num(p, 3)}",
+                _num(oos),
+                f"In-sample {_num(ins)} &middot; degradation p = {_num(p, 3)}",
                 tone,
+                _gauge(fill=(50.0, at(oos)), bar=50.0, ref=at(ins)),
             )
         )
+
     if res.overfitting is not None:
         pbo = res.overfitting["pbo"]
-        tone = "critical" if pbo >= 0.5 else ("warning" if pbo >= 0.25 else "excellent")
-        cards.append(
+        tone = "critical" if pbo >= 0.5 else ("warning" if pbo >= 0.25 else "")
+        figures.append(
             _kpi(
-                "Prob. of overfitting",
+                "Probability of overfitting",
                 _pct(pbo, 0),
-                f"CSCV over {res.overfitting['n_trials']} trials",
+                f"Bar at 50% &middot; CSCV over {res.overfitting['n_trials']} trials",
                 tone,
+                _gauge(fill=(0.0, pbo * 100.0), bar=50.0),
             )
         )
-    return '<div class="kpi-grid">' + "".join(cards) + "</div>"
+
+    low, high = ci["low"], ci["high"]
+    if math.isfinite(high) and high <= 0:
+        tone = "critical"
+    elif math.isfinite(low) and low <= 0:
+        tone = "warning"
+    else:
+        tone = ""
+    hint = f"{conf:.0%} interval {_num(low)} to {_num(high)}"
+    if tone == "warning":
+        hint += " &middot; includes zero"
+    gauge = _gauge()
+    if math.isfinite(low) and math.isfinite(high):
+        at = _axis(min(low, 0.0), max(high, 0.0))
+        gauge = _gauge(fill=(at(low), at(high)), bar=at(0.0), obs=at(s["sharpe_annual"]))
+    figures.append(
+        _kpi("Sharpe, annualised", _num(s["sharpe_annual"]), hint, tone, gauge)
+    )
+
+    need = s["min_track_record_length_deflated"]
+    edge = "Alpha" if d["kind"] == "alpha" else "Mean return"
+    edge_detail = f"t {_num(d['edge_t_stat'])}"
+    if d["beta"] is not None:
+        edge_detail += f", &beta; {_num(d['beta'])}"
+    sub = [
+        ("Probabilistic Sharpe", _pct(s["psr"]), "one trial"),
+        ("Track record needed", f"{_fmt_obs(need)} obs", f"of {n:,} held"),
+        (edge, f"{_pct(d['edge_annual'], 2)}/yr", edge_detail),
+        ("Skew", _num(s["skew"]), f"kurtosis {_num(s['kurtosis'], 1)}"),
+    ]
+    strip = "".join(
+        f'<div><span class="k">{k}</span><b>{v}</b> <span class="x">{x}</span></div>'
+        for k, v, x in sub
+    )
+    return (
+        '<div class="figures">' + "".join(figures) + "</div>"
+        f'<div class="sub">{strip}</div>'
+    )
+
+
+_SEVERITY_NOUN = {"warning": "warning", "caution": "caution", "info": "note"}
+
+
+def _summary_html(res: ValidityResult) -> str:
+    """Headline: how many findings of each severity, worst first."""
+    counts = {
+        sev: sum(1 for f in res.findings if f.severity == sev)
+        for sev in _SEVERITY_NOUN
+    }
+    parts = [
+        f"{c} {_SEVERITY_NOUN[sev]}{'' if c == 1 else 's'}"
+        for sev, c in counts.items()
+        if c
+    ]
+    if not parts:
+        return (
+            '<div class="summary"><div class="head">No findings</div>'
+            '<div class="sub">Nothing was flagged at the configured thresholds.'
+            "</div></div>"
+        )
+    worst = next(sev for sev, c in counts.items() if c)
+    rest = "".join(f" &middot; {p}" for p in parts[1:])
+    return (
+        f'<div class="summary"><div class="head"><span class="sq {worst}"></span>'
+        f"{parts[0]}<span>{rest}</span></div></div>"
+    )
 
 
 def _findings_html(res: ValidityResult) -> str:
     items = sorted(res.findings, key=lambda f: _SEVERITY_ORDER.get(f.severity, 3))
     if not items:
         return '<p class="note">No findings.</p>'
-    lis = "".join(
-        f'<li class="{f.severity}"><span class="badge {_badge(f.severity)}">'
-        f"{f.severity}</span> <code>{f.code}</code>{_html.escape(f.message)}</li>"
+    rows = "".join(
+        f'<tr class="{f.severity}"><td class="s"><span class="sq {f.severity}">'
+        f'</span></td><td class="l">{f.severity}</td>'
+        f"<td>{_html.escape(f.message)}</td>"
+        f'<td class="c">{f.code}</td></tr>'
         for f in items
     )
-    return f'<ul class="findings">{lis}</ul>'
-
-
-def _badge(severity: str) -> str:
-    return {"warning": "critical", "caution": "caution", "info": "info"}.get(
-        severity, "info"
-    )
+    return f'<table class="findings"><tbody>{rows}</tbody></table>'
 
 
 def _sharpe_table(res: ValidityResult) -> str:
@@ -153,7 +241,13 @@ def _sharpe_table(res: ValidityResult) -> str:
         ["Skew / kurtosis", f"{_num(s['skew'])} / {_num(s['kurtosis'], 1)}"],
         ["Lag-1 autocorrelation", _num(s["autocorrelation_lag1"])],
     ]
-    return _table(["Sharpe significance", "Value"], rows)
+    half = (len(rows) + 1) // 2
+    return (
+        '<div class="two-col">'
+        + _table(["Sharpe significance", "Value"], rows[:half], "kv")
+        + _table(["Sample", "Value"], rows[half:], "kv")
+        + "</div>"
+    )
 
 
 def _bootstrap_table(res: ValidityResult) -> str:
@@ -163,7 +257,13 @@ def _bootstrap_table(res: ValidityResult) -> str:
     def row(label: str, key: str, pct: bool) -> list[str]:
         fmt = _pct if pct else _num
         e = b[key]
-        return [label, fmt(e["observed"]), fmt(e["low"]), fmt(e["median"]), fmt(e["high"])]
+        low, high, obs = e["low"], e["high"], e["observed"]
+        bar = _gauge()
+        if math.isfinite(low) and math.isfinite(high):
+            at = _axis(min(low, 0.0), max(high, 0.0))
+            zero = at(0.0) if low < 0 < high else None
+            bar = _gauge(fill=(at(low), at(high)), bar=zero, obs=at(obs))
+        return [label, fmt(obs), fmt(low), bar, fmt(high), fmt(e["median"])]
 
     lo, hi = (1 - conf) / 2, 1 - (1 - conf) / 2
     rows = [
@@ -171,10 +271,24 @@ def _bootstrap_table(res: ValidityResult) -> str:
         row("CAGR", "cagr", True),
         row("Volatility (annualised)", "volatility", True),
         row("Max drawdown", "max_drawdown", True),
-        ["P(Sharpe ≤ 0)", _pct(b["prob_sharpe_below_zero"]), "", "", ""],
+        ["P(Sharpe ≤ 0)", _pct(b["prob_sharpe_below_zero"]), "", "", "", ""],
     ]
-    return _table(
-        ["Bootstrap", "Observed", f"P{lo * 100:g}", "Median", f"P{hi * 100:g}"], rows
+    cls = ["", "", ' class="lo"', ' class="bar"', ' class="hi"', ""]
+    body = "".join(
+        "<tr>" + "".join(f"<td{c}>{v}</td>" for c, v in zip(cls, r, strict=True)) + "</tr>"
+        for r in rows
+    )
+    head = "".join(
+        f"<th{c}>{h}</th>"
+        for c, h in zip(
+            cls,
+            ["Bootstrap", "Observed", f"P{lo * 100:g}", "Interval", f"P{hi * 100:g}", "Median"],
+            strict=True,
+        )
+    )
+    return (
+        f'<table class="ivl"><thead><tr>{head}</tr></thead>'
+        f"<tbody>{body}</tbody></table>"
     )
 
 
@@ -227,7 +341,7 @@ def _edge_table(res: ValidityResult) -> str:
         ["Trend t-statistic", _num(d["trend_t_stat"])],
         ["Trend p-value", _num(d["trend_p_value"], 3)],
     ]
-    return _table(["Edge and decay", "Value"], rows)
+    return _table(["Edge and decay", "Value"], rows, "kv")
 
 
 def _pbo_section(res: ValidityResult, embed) -> str:
@@ -244,13 +358,15 @@ def _pbo_section(res: ValidityResult, embed) -> str:
          f"{over['n_trials']} / {over['n_splits']} / {over['n_combinations']:,}"],
     ]
     return (
+        '<section class="sec"><div class="sec-side">'
         "<h3>Probability of Backtest Overfitting</h3>"
-        '<p class="note">Combinatorially symmetric cross-validation: the history '
-        "is cut into blocks, every half/half combination is used as train/test, "
-        "and each time the best variant in-sample is ranked out-of-sample. PBO is "
-        "the share of splits where that winner lands in the bottom half.</p>"
+        '<p class="note">Every half/half combination of time blocks is used as '
+        "train/test. PBO is the share of splits where the best variant in-sample "
+        "lands in the bottom half out-of-sample.</p></div>"
+        '<div class="sec-main">'
         f'<div id="pbo_chart" class="cell full">{embed(plotting.pbo_figure(res))}</div>'
-        + _table(["Overfitting", "Value"], rows)
+        + _table(["Overfitting", "Value"], rows, "kv")
+        + "</div></section>"
     )
 
 
@@ -292,22 +408,29 @@ def render_html(
 
     is_alpha = d["kind"] == "alpha"
     edge_note = (
-        "Alpha is the return left after removing benchmark exposure "
-        "(r = α + β·benchmark). "
+        "Return left after removing benchmark exposure (r = α + β·benchmark). "
         if is_alpha
         else "No benchmark was supplied, so the edge is the mean excess return. "
     ) + (
-        "The dashed line is a linear time trend fitted to the full sample with "
-        "Newey–West standard errors: a significantly negative slope means the "
-        "edge is decaying."
+        "The dashed line is a fitted time trend: a significantly negative slope "
+        "means the edge is decaying."
     )
-    split_note = (
-        ""
-        if result.split is not None
-        else '<p class="note">No split supplied. Pass <code>split=</code> with the '
-        "date the strategy was frozen (or the out-of-sample fraction) to compare "
-        "the period used to design it with the period that followed.</p>"
-    )
+    if result.split is not None:
+        split_side = (
+            f"The shaded period, from {result.split['split_label']}, is the part "
+            "the strategy was not tuned on."
+        )
+        split_note = ""
+    else:
+        split_side = (
+            "Compares the period used to design the strategy with the period "
+            "that followed."
+        )
+        split_note = (
+            '<p class="note">No split supplied. Pass <code>split=</code> with the '
+            "date the strategy was frozen (or the out-of-sample fraction) to "
+            "compare the two periods.</p>"
+        )
     params = " &bull; ".join(
         [
             f"Strategy: {_html.escape(result.label)}",
@@ -315,11 +438,38 @@ def render_html(
             f"Observations: {sample['n']:,} ({sample['years']:.1f}y)",
         ]
     )
+    method = [
+        (
+            "Probabilistic Sharpe",
+            "Probability that the true Sharpe is above zero given sample length, "
+            "skew and fat tails.",
+        ),
+        (
+            "Deflated Sharpe",
+            "The same probability against the best Sharpe expected from "
+            f"{s['n_trials']:,} skill-less trial(s). Cross-trial dispersion: "
+            f"{a['trials_sharpe_std_source']}.",
+        ),
+        (
+            "Minimum track record",
+            "Observations needed for the observed Sharpe to be significant at "
+            f"{a['confidence']:.0%}.",
+        ),
+        ("Bootstrap", f"{a['bootstrap'].capitalize()}. Newey–West errors for the edge."),
+        (
+            "Returns",
+            f"{a['returns'].capitalize()} (rf={a['rf_annual']:.2%}); "
+            f"{a['periods_per_year']:g} periods per year.",
+        ),
+        (
+            "Not covered",
+            "Look-ahead bias, survivorship bias, unrealistic fills and data errors.",
+        ),
+    ]
     assumptions = (
-        f"Assumptions: {a['returns']} (rf={a['rf_annual']:.2%}) &bull; "
-        f"periods/year={a['periods_per_year']:g} &bull; "
-        f"confidence={a['confidence']:.0%} &bull; bootstrap: {a['bootstrap']} &bull; "
-        f"cross-trial Sharpe dispersion: {a['trials_sharpe_std_source']}. "
+        "<dl>"
+        + "".join(f"<div><dt>{k}</dt><dd>{v}</dd></div>" for k, v in method)
+        + "</dl>"
         "Methods: Bailey &amp; López de Prado (2012, 2014); Bailey, Borwein, "
         "López de Prado &amp; Zhu (2017); Politis &amp; Romano (1994). "
         "Informational only — not investment advice."
@@ -328,15 +478,17 @@ def render_html(
     fragments = {
         "title": _html.escape(title),
         "date_range": date_range,
-        "params": params + " | ",
+        "params": params,
         "v": __version__,
         "generated_at": datetime.now().strftime("%d %b, %Y %H:%M").lstrip("0"),
+        "summary": _summary_html(result),
         "kpis": _kpis_html(result),
         "findings": _findings_html(result),
         "n_trials": f"{s['n_trials']:,}",
         "sharpe_chart": embed(plotting.sharpe_distribution_figure(result)),
         "sharpe_table": _sharpe_table(result),
         "bootstrap_table": _bootstrap_table(result),
+        "split_side": split_side,
         "split_note": split_note,
         "equity_chart": embed(plotting.equity_figure(result)),
         "split_table": _split_table(result),
