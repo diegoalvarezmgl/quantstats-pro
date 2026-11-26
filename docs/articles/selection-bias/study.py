@@ -24,6 +24,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
 import numpy as np
@@ -38,6 +40,7 @@ FAST = (3, 5, 8, 10, 15, 20)
 SLOW = (30, 40, 50, 60, 80, 100, 120, 150, 200, 250)
 SKILL_NOISE = 12.5  # noise-to-signal ratio giving a true annual Sharpe near 1
 FIXED_RULE = "ma_10_40"  # control rule, chosen before looking at any data
+THRESHOLD_BOOT = 500  # replicates of the max-t bootstrap per market
 HERE = Path(__file__).parent
 
 INK, SIGNAL, MUTED, RULE, WASH = "#14171a", "#c8321e", "#5c646c", "#d9dcde", "#f1f2f0"
@@ -72,7 +75,7 @@ def annual_sharpe(x: pd.Series | np.ndarray) -> float:
     return float(arr.mean() / sd * np.sqrt(PERIODS)) if sd > 0 else 0.0
 
 
-def examine(market: pd.Series, trials: pd.DataFrame) -> dict[str, float]:
+def examine(market: pd.Series, trials: pd.DataFrame) -> dict[str, float | str]:
     split = int(len(market) * IS_FRACTION)
     is_sharpe = trials.iloc[:split].mean() / trials.iloc[:split].std(ddof=1)
     best = is_sharpe.idxmax()
@@ -85,6 +88,9 @@ def examine(market: pd.Series, trials: pd.DataFrame) -> dict[str, float]:
     sp = validity.split_analysis(chosen, market.index[split], PERIODS)
     edge = validity.decay_analysis(chosen, market, PERIODS)
     pbo = validity.probability_of_backtest_overfitting(trials)
+    # Critical values for the alpha t-statistic of the best of the 60 rules.
+    t_boot = validity.selection_adjusted_t_threshold(trials, market, n_boot=THRESHOLD_BOOT)
+    t_sidak = validity.selection_adjusted_t_threshold(n_trials=trials.shape[1])
 
     # Variant: select on the full sample, so DSR is computed on the data used to choose.
     full_winner = trials[per_period.idxmax()]
@@ -117,13 +123,19 @@ def examine(market: pd.Series, trials: pd.DataFrame) -> dict[str, float]:
         "dsr": dsr["dsr"],
         "degradation_p": sp["degradation_p_value"],
         "alpha_t": edge["edge_t_stat"],
+        "alpha_t_threshold": t_boot["threshold"],
+        "alpha_t_sidak": t_sidak["threshold"],
         "pbo": pbo["pbo"],
     }
 
 
-def run_scenario(name: str, markets: int, seed: int) -> pd.DataFrame:
+def _examine(args: tuple[pd.Series, pd.DataFrame]) -> dict[str, float | str]:
+    return examine(*args)
+
+
+def _markets(name: str, markets: int, seed: int):
+    """Markets are drawn sequentially from one generator, so results do not depend on workers."""
     rng = np.random.default_rng(seed)
-    rows = []
     for _ in range(markets):
         market = simulate_market(rng, drift=0.0003 if name == "drift" else 0.0)
         trials = crossover_trials(market)
@@ -131,8 +143,14 @@ def run_scenario(name: str, markets: int, seed: int) -> pd.DataFrame:
             # Replace one crossover so the search still covers 60 rules.
             trials = trials.drop(columns=trials.columns[-1])
             trials["skilled"] = skilled_rule(market, rng)
-        rows.append(examine(market, trials))
-    return pd.DataFrame(rows)
+        yield market, trials
+
+
+def run_scenario(name: str, markets: int, seed: int, workers: int = 1) -> pd.DataFrame:
+    if workers <= 1:
+        return pd.DataFrame([examine(m, t) for m, t in _markets(name, markets, seed)])
+    with ProcessPoolExecutor(workers) as pool:
+        return pd.DataFrame(list(pool.map(_examine, _markets(name, markets, seed), chunksize=4)))
 
 
 def summarise(df: pd.DataFrame) -> dict[str, float]:
@@ -159,6 +177,11 @@ def summarise(df: pd.DataFrame) -> dict[str, float]:
         "share_psr_ge_95": float((df["psr"] >= 0.95).mean()),
         "share_dsr_ge_95": float((df["dsr"] >= 0.95).mean()),
         "share_alpha_t_gt_196": float((df["alpha_t"] > 1.96).mean()),
+        "share_alpha_t_gt_max_t_bootstrap": float((df["alpha_t"] > df["alpha_t_threshold"]).mean()),
+        "share_alpha_t_gt_sidak": float((df["alpha_t"] > df["alpha_t_sidak"]).mean()),
+        "median_alpha_t_threshold": float(df["alpha_t_threshold"].median()),
+        "alpha_t_sidak": float(df["alpha_t_sidak"].iloc[0]),
+        "alpha_t_q975": float(df["alpha_t"].quantile(0.975)),
         "share_degradation_p_lt_05": float((df["degradation_p"] < 0.05).mean()),
         "fixed_share_psr_ge_95": float((df["fixed_psr"] >= 0.95).mean()),
         "fixed_share_alpha_t_gt_196": float((df["fixed_alpha_t"] > 1.96).mean()),
@@ -170,6 +193,8 @@ def summarise(df: pd.DataFrame) -> dict[str, float]:
         "median_pairwise_corr": float(df["mean_pairwise_corr"].median()),
         "median_pbo": float(df["pbo"].median()),
         "share_pbo_ge_50": float((df["pbo"] >= 0.5).mean()),
+        "share_pbo_le_05": float((df["pbo"] <= 0.05).mean()),
+        "share_pbo_lt_25": float((df["pbo"] < 0.25).mean()),
     }
 
 
@@ -222,7 +247,10 @@ def published_example() -> dict[str, float | str]:
     """The single market behind docs/tearsheet_validity.html (seed 3, 3 bp drift)."""
     market = simulate_market(np.random.default_rng(3), drift=0.0003)
     out = examine(market, crossover_trials(market))
-    keep = ("selected", "sharpe_is", "sharpe_oos", "sharpe_full", "market_sharpe_full", "psr", "dsr", "alpha_t", "pbo")
+    keep = (
+        "selected", "sharpe_is", "sharpe_oos", "sharpe_full", "market_sharpe_full",
+        "psr", "dsr", "alpha_t", "pbo",
+    )
     return {k: out[k] for k in keep}
 
 
@@ -237,10 +265,11 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--markets", type=int, default=1000)
     parser.add_argument("--seed", type=int, default=20261124)
+    parser.add_argument("--workers", type=int, default=max(1, (os.cpu_count() or 2) - 2))
     args = parser.parse_args()
 
     results = {
-        name: run_scenario(name, args.markets, args.seed + i)
+        name: run_scenario(name, args.markets, args.seed + i, args.workers)
         for i, name in enumerate(("null", "drift", "skill"))
     }
     summary = {name: summarise(df) for name, df in results.items()}

@@ -7,7 +7,7 @@ import math
 from datetime import datetime
 from pathlib import Path
 
-from .core import ValidityResult, _fmt_obs
+from .core import PBO_NO_INFORMATION, PBO_REJECT_ABOVE, ValidityResult, _fmt_obs
 
 _SEVERITY_ORDER = {"warning": 0, "caution": 1, "info": 2}
 
@@ -131,14 +131,24 @@ def _kpis_html(res: ValidityResult) -> str:
 
     if res.overfitting is not None:
         pbo = res.overfitting["pbo"]
-        tone = "critical" if pbo >= 0.5 else ("warning" if pbo >= 0.25 else "")
+        if pbo >= PBO_NO_INFORMATION:
+            tone, verdict = "critical", "selection uninformative"
+        elif pbo > PBO_REJECT_ABOVE:
+            tone, verdict = "warning", "inconclusive"
+        else:
+            tone, verdict = "", "passes"
         figures.append(
             _kpi(
                 "Probability of overfitting",
                 _pct(pbo, 0),
-                f"Bar at 50% &middot; CSCV over {res.overfitting['n_trials']} trials",
+                f"Reject above {PBO_REJECT_ABOVE:.0%} &middot; {verdict} &middot; "
+                f"{res.overfitting['n_trials']} trials",
                 tone,
-                _gauge(fill=(0.0, pbo * 100.0), bar=50.0),
+                _gauge(
+                    fill=(0.0, pbo * 100.0),
+                    bar=PBO_REJECT_ABOVE * 100.0,
+                    ref=PBO_NO_INFORMATION * 100.0,
+                ),
             )
         )
 
@@ -163,6 +173,8 @@ def _kpis_html(res: ValidityResult) -> str:
     need = s["min_track_record_length_deflated"]
     edge = "Alpha" if d["kind"] == "alpha" else "Mean return"
     edge_detail = f"t {_num(d['edge_t_stat'])}"
+    if d.get("edge_t_threshold_n_trials", 1) > 1:
+        edge_detail += f" vs {_num(d['edge_t_threshold'])} required"
     if d["beta"] is not None:
         edge_detail += f", &beta; {_num(d['beta'])}"
     sub = [
@@ -332,8 +344,21 @@ def _edge_table(res: ValidityResult) -> str:
     rows = [
         [f"{name} (annualised)", _pct(d["edge_annual"], 2)],
         ["t-statistic (Newey–West)", _num(d["edge_t_stat"])],
-        ["p-value", _num(d["edge_p_value"], 3)],
+        ["p-value, single test", _num(d["edge_p_value"], 3)],
     ]
+    if d.get("edge_t_threshold_n_trials", 1) > 1:
+        how = (
+            "max-t bootstrap"
+            if d["edge_t_threshold_method"] == "max_t_bootstrap"
+            else "Šidák"
+        )
+        rows.insert(
+            2,
+            [
+                f"t required for the best of {d['edge_t_threshold_n_trials']:,} trials ({how})",
+                _num(d["edge_t_threshold"]),
+            ],
+        )
     if d["beta"] is not None:
         rows.append(["Beta", _num(d["beta"])])
     rows += [
@@ -342,6 +367,24 @@ def _edge_table(res: ValidityResult) -> str:
         ["Trend p-value", _num(d["trend_p_value"], 3)],
     ]
     return _table(["Edge and decay", "Value"], rows, "kv")
+
+
+def _edge_method_note(res: ValidityResult) -> str:
+    d = res.decay
+    n = d.get("edge_t_threshold_n_trials", 1)
+    if n <= 1:
+        return "One trial: compared with the single-test critical value."
+    if d["edge_t_threshold_method"] == "max_t_bootstrap":
+        return (
+            f"Compared with {_num(d['edge_t_threshold'])}, the upper quantile of the "
+            f"largest t-statistic among the {n:,} trials under no edge (studentised "
+            "max-t stationary bootstrap, trials and benchmark resampled jointly)."
+        )
+    return (
+        f"Compared with {_num(d['edge_t_threshold'])}, the Šidák critical value for "
+        f"{n:,} independent trials. Conservative when trials are correlated; pass "
+        "the trials' returns to measure it."
+    )
 
 
 def _pbo_section(res: ValidityResult, embed) -> str:
@@ -362,7 +405,9 @@ def _pbo_section(res: ValidityResult, embed) -> str:
         "<h3>Probability of Backtest Overfitting</h3>"
         '<p class="note">Every half/half combination of time blocks is used as '
         "train/test. PBO is the share of splits where the best variant in-sample "
-        "lands in the bottom half out-of-sample.</p></div>"
+        "lands in the bottom half out-of-sample. Bailey et al. (2017) reject above "
+        f"{PBO_REJECT_ABOVE:.0%}; {PBO_NO_INFORMATION:.0%} is what an uninformative "
+        "in-sample rank gives on average.</p></div>"
         '<div class="sec-main">'
         f'<div id="pbo_chart" class="cell full">{embed(plotting.pbo_figure(res))}</div>'
         + _table(["Overfitting", "Value"], rows, "kv")
@@ -457,6 +502,10 @@ def render_html(
         ),
         ("Bootstrap", f"{a['bootstrap'].capitalize()}. Newey–West errors for the edge."),
         (
+            "Edge t-statistic",
+            _edge_method_note(result),
+        ),
+        (
             "Returns",
             f"{a['returns'].capitalize()} (rf={a['rf_annual']:.2%}); "
             f"{a['periods_per_year']:g} periods per year.",
@@ -471,7 +520,8 @@ def render_html(
         + "".join(f"<div><dt>{k}</dt><dd>{v}</dd></div>" for k, v in method)
         + "</dl>"
         "Methods: Bailey &amp; López de Prado (2012, 2014); Bailey, Borwein, "
-        "López de Prado &amp; Zhu (2017); Politis &amp; Romano (1994). "
+        "López de Prado &amp; Zhu (2017); Politis &amp; Romano (1994); "
+        "White (2000); Romano &amp; Wolf (2005). "
         "Informational only — not investment advice."
     )
 
