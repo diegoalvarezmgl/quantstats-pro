@@ -60,8 +60,34 @@ the result carries the finding `N_TRIALS_NOT_PROVIDED`.
 
 **`trials`** is better still: a DataFrame with the returns of every variant,
 one column each. It supplies the real dispersion of Sharpe ratios across
-variants (instead of assuming it) and enables the probability of backtest
-overfitting.
+variants (instead of assuming it), enables the probability of backtest
+overfitting, and lets the alpha t-statistic be compared with the largest
+t-statistic the whole family would produce by chance.
+
+### Alpha of a selected strategy
+
+A Newey–West t-statistic of alpha is compared with 1.96 when one strategy was
+tested. For the best of several, `decay.edge_t_threshold` holds the critical
+value that keeps the same one-sided 2.5% error rate:
+
+| Input | `edge_t_threshold_method` | How |
+| --- | --- | --- |
+| one trial | `single_test` | Normal quantile, 1.96 at 95% confidence |
+| `n_trials=N` | `sidak` | Normal quantile at `0.975^(1/N)`; 3.34 for N = 60. Assumes independent trials, so it is conservative when they are correlated |
+| `trials=df` | `max_t_bootstrap` | Studentised max-t stationary bootstrap in the spirit of White (2000) and Romano & Wolf (2005): trials and benchmark are resampled with the same time indices, each replicate's t-statistics are recentred on the observed estimates, and the threshold is the 97.5% quantile of their maximum |
+
+`ALPHA_NOT_SIGNIFICANT_AFTER_SELECTION` is raised when the t-statistic clears
+1.96 but not that threshold.
+
+### Reading PBO
+
+Bailey, Borwein, López de Prado and Zhu (2017) treat PBO as a type I error
+probability and reject above 0.05. A value of 0.5 is what an uninformative
+in-sample ranking gives on average, but a single-sample PBO is widely
+dispersed: in the [simulation study](articles/selection-bias.md), searches
+with no skilled rule produce a PBO below 0.25 in 16% of markets and below 0.05
+in 1.4%. The finding is therefore `info` at or below 0.05, `caution`
+(inconclusive) between 0.05 and 0.5, and `warning` from 0.5.
 
 When only `n_trials` is given, the dispersion of Sharpe ratios across trials is
 assumed to equal the sampling noise of a zero-skill strategy over the same
@@ -78,6 +104,7 @@ v.bootstrap_confidence_intervals(returns, periods=252, n_boot=2000, seed=0)
 v.split_analysis(returns, "2023-01-01", periods=252)
 v.decay_analysis(returns, benchmark, periods=252)
 v.probability_of_backtest_overfitting(trials_df, n_splits=16)
+v.selection_adjusted_t_threshold(trials_df, benchmark)        # or n_trials=60
 ```
 
 All Sharpe arithmetic is per-period (the frequency of the input). In
@@ -104,9 +131,10 @@ or `warning`:
 | `OUT_OF_SAMPLE_DEGRADATION` | Sharpe dropped significantly after the split |
 | `OUT_OF_SAMPLE_SHARPE_NOT_POSITIVE` | Out-of-sample Sharpe ≤ 0 |
 | `OUT_OF_SAMPLE_INCONCLUSIVE` | Out-of-sample Sharpe positive but too short to confirm |
-| `ALPHA_NOT_SIGNIFICANT` | Performance is explained by benchmark exposure |
+| `ALPHA_NOT_SIGNIFICANT` | Alpha t-statistic below the single-test critical value: performance is explained by benchmark exposure |
+| `ALPHA_NOT_SIGNIFICANT_AFTER_SELECTION` | Alpha t-statistic clears the single-test value but not the one required for the best of the trials |
 | `EDGE_DECAYING` | Significant negative time trend in alpha / mean return |
-| `PROBABILITY_OF_BACKTEST_OVERFITTING` | PBO value (warning at ≥ 50%) |
+| `PROBABILITY_OF_BACKTEST_OVERFITTING` | PBO value: `info` at ≤ 5%, `caution` (inconclusive) up to 50%, `warning` at ≥ 50% |
 
 ## What it cannot tell you
 

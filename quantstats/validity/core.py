@@ -14,6 +14,9 @@ References
 - Bailey, Borwein, López de Prado & Zhu (2017), "The Probability of Backtest
   Overfitting" — combinatorially symmetric cross-validation (CSCV).
 - Politis & Romano (1994), "The Stationary Bootstrap".
+- White (2000), "A Reality Check for Data Snooping"; Romano & Wolf (2005),
+  "Stepwise Multiple Testing as Formalized Data Snooping" — max-statistic
+  bootstrap behind the selection-adjusted t threshold.
 - Newey & West (1987) — HAC standard errors.
 """
 
@@ -31,6 +34,12 @@ from scipy.stats import norm
 
 _EULER_GAMMA = 0.5772156649015329
 _MIN_OBS = 30
+
+# Bailey, Borwein, López de Prado & Zhu (2017), section 3.1: "a customary approach
+# would be to reject models for which PBO is estimated to be greater than 0.05".
+PBO_REJECT_ABOVE = 0.05
+# Expected PBO when in-sample rank is unrelated to out-of-sample rank.
+PBO_NO_INFORMATION = 0.5
 
 
 # ---------------------------------------------------------------------------
@@ -464,6 +473,141 @@ def decay_analysis(
     }
 
 
+def _hac_intercept(
+    y: np.ndarray, b: np.ndarray | None
+) -> tuple[np.ndarray, np.ndarray]:
+    """
+    Intercept and its Newey–West standard error for many series at once.
+
+    ``y`` has shape (..., n, k): k series over n periods. ``b`` is the single
+    regressor shared by all of them, shape (..., n), or None for a mean-only
+    model. Same estimator as :func:`_hac_ols`, vectorised over series and over
+    any leading (bootstrap) dimensions.
+    """
+    n = y.shape[-2]
+    if b is None:
+        alpha = y.mean(axis=-2)
+        resid = y - alpha[..., None, :]
+        u = resid / n
+        dof = 1
+    else:
+        bm = b.mean(axis=-1, keepdims=True)
+        bc = b - bm
+        sbb = (bc**2).sum(axis=-1, keepdims=True)
+        sbb = np.where(sbb > 0, sbb, np.nan)
+        beta = (bc[..., None] * y).sum(axis=-2) / sbb
+        alpha = y.mean(axis=-2) - beta * bm
+        resid = y - alpha[..., None, :] - beta[..., None, :] * b[..., None]
+        # First row of (X'X)^-1 applied to each x_t
+        h = 1.0 / n - bm * bc / sbb
+        u = h[..., None] * resid
+        dof = 2
+    lags = int(math.floor(4.0 * (n / 100.0) ** (2.0 / 9.0)))
+    var = (u**2).sum(axis=-2)
+    for lag in range(1, min(lags, n - 1) + 1):
+        w = 1.0 - lag / (lags + 1.0)
+        var = var + 2.0 * w * (u[..., lag:, :] * u[..., :-lag, :]).sum(axis=-2)
+    var = var * (n / max(n - dof, 1))
+    return alpha, np.sqrt(np.clip(var, 0.0, None))
+
+
+def selection_adjusted_t_threshold(
+    trials: pd.DataFrame | None = None,
+    benchmark: pd.Series | None = None,
+    *,
+    n_trials: int | None = None,
+    confidence: float = 0.95,
+    n_boot: int = 1000,
+    mean_block: float | None = None,
+    seed: int | None = 0,
+) -> dict[str, Any]:
+    """
+    Critical value for the t-statistic of the edge of a *selected* strategy.
+
+    A t-statistic is compared with 1.96 when one strategy was tested. When the
+    strategy is the best of several, the right comparison is the distribution
+    of the largest t-statistic among all of them under the null of no edge.
+
+    With ``trials`` (returns of every variant tried, one column each) that
+    distribution is estimated by a studentised max-t stationary bootstrap, in
+    the spirit of White (2000) and Romano & Wolf (2005): trials and benchmark
+    are resampled with the same time indices, so the dependence between
+    variants is kept; each replicate's t-statistics are recentred on the
+    observed estimates; the threshold is the upper quantile of their maximum.
+
+    With only ``n_trials`` the Šidák bound for independent tests is used. It
+    is conservative when the variants are correlated, which they usually are.
+
+    The test is one-sided at ``(1 - confidence) / 2``, so a single trial gives
+    the usual 1.96 at ``confidence=0.95``.
+
+    Returns a dict with ``threshold``, ``method`` (``single_test``, ``sidak``
+    or ``max_t_bootstrap``), ``n_trials``, ``level`` and ``n_boot``.
+    """
+    level = (1.0 - confidence) / 2.0
+    if trials is None:
+        n_eff = int(n_trials) if n_trials is not None else 1
+        if n_eff < 1:
+            raise ValueError(f"n_trials must be >= 1, got {n_eff}")
+        single = n_eff == 1
+        q = 1.0 - level if single else (1.0 - level) ** (1.0 / n_eff)
+        return {
+            "threshold": float(norm.ppf(q)),
+            "method": "single_test" if single else "sidak",
+            "n_trials": n_eff,
+            "level": level,
+            "n_boot": 0,
+        }
+
+    if not isinstance(trials, pd.DataFrame) or trials.shape[1] < 1:
+        raise ValueError(
+            "trials must be a DataFrame with one column of returns per variant."
+        )
+    frame = trials.astype(float)
+    if benchmark is not None:
+        frame = pd.concat([frame, benchmark.astype(float).rename("__benchmark__")], axis=1)
+    frame = frame.replace([np.inf, -np.inf], np.nan).dropna(how="any")
+    if len(frame) < _MIN_OBS:
+        raise ValueError(
+            f"Only {len(frame)} complete rows across trials"
+            f"{' and benchmark' if benchmark is not None else ''}; "
+            f"need at least {_MIN_OBS}."
+        )
+    b = frame.pop("__benchmark__").to_numpy() if benchmark is not None else None
+    y = frame.to_numpy()
+    y = y[:, y.std(axis=0) > 0]
+    n, k = y.shape
+    if k == 0:
+        raise ValueError("Every trial has zero variance.")
+    if k == 1:
+        return selection_adjusted_t_threshold(n_trials=1, confidence=confidence)
+
+    alpha_hat, _ = _hac_intercept(y, b)
+    if mean_block is None:
+        mean_block = max(1.0, round(n ** (1.0 / 3.0)))
+    rng = np.random.default_rng(seed)
+    chunk = max(1, min(n_boot, 4_000_000 // (n * k)))
+    maxima: list[np.ndarray] = []
+    done = 0
+    while done < n_boot:
+        size = min(chunk, n_boot - done)
+        idx = _stationary_bootstrap_indices(n, size, float(mean_block), rng)
+        a_star, se_star = _hac_intercept(y[idx], b[idx] if b is not None else None)
+        with np.errstate(invalid="ignore", divide="ignore"):
+            t_star = np.where(se_star > 0, (a_star - alpha_hat) / se_star, np.nan)
+        maxima.append(np.nanmax(t_star, axis=1))
+        done += size
+    dist = np.concatenate(maxima)
+    dist = dist[np.isfinite(dist)]
+    return {
+        "threshold": float(np.quantile(dist, 1.0 - level)),
+        "method": "max_t_bootstrap",
+        "n_trials": int(k),
+        "level": level,
+        "n_boot": int(len(dist)),
+    }
+
+
 # ---------------------------------------------------------------------------
 # Probability of backtest overfitting (CSCV)
 # ---------------------------------------------------------------------------
@@ -642,8 +786,11 @@ class ValidityResult:
             )
         d = self.decay
         name = "Alpha" if d["kind"] == "alpha" else "Mean return"
+        bar = ""
+        if d.get("edge_t_threshold_n_trials", 1) > 1:
+            bar = f" vs {d['edge_t_threshold']:.2f} for {d['edge_t_threshold_n_trials']} trials"
         lines.append(
-            f"  {name} (annualised): {d['edge_annual']:.2%} (t={d['edge_t_stat']:.2f}); "
+            f"  {name} (annualised): {d['edge_annual']:.2%} (t={d['edge_t_stat']:.2f}{bar}); "
             f"trend {d['trend_annual_per_year']:+.2%}/year (t={d['trend_t_stat']:.2f})"
         )
         if self.overfitting:
@@ -839,6 +986,9 @@ def validate(
     if benchmark is not None:
         bench = _clean_returns(benchmark, "benchmark") - rf_period
     decay = decay_analysis(excess, bench, periods)
+    decay.update(
+        _edge_threshold(excess, bench, trials, rf_period, n_trials_eff, confidence, n_boot, seed)
+    )
     over = probability_of_backtest_overfitting(trials) if trials is not None else None
 
     idx = s.index
@@ -876,6 +1026,39 @@ def validate(
     )
     result.findings = _findings(result, confidence)
     return result
+
+
+def _edge_threshold(
+    excess: pd.Series,
+    bench: pd.Series | None,
+    trials: pd.DataFrame | None,
+    rf_period: float,
+    n_trials: int,
+    confidence: float,
+    n_boot: int,
+    seed: int | None,
+) -> dict[str, Any]:
+    """Selection-adjusted critical value for the edge t-statistic, as decay keys."""
+    thr = None
+    if trials is not None and n_trials > 1:
+        # The selected series joins the family so the maximum always covers it;
+        # if it is already a column the duplicate leaves the maximum unchanged.
+        family = pd.concat(
+            [trials.astype(float) - rf_period, excess.rename("__selected__")], axis=1
+        )
+        try:
+            thr = selection_adjusted_t_threshold(
+                family, bench, confidence=confidence, n_boot=min(n_boot, 1000), seed=seed
+            )
+        except ValueError:
+            thr = None
+    if thr is None:
+        thr = selection_adjusted_t_threshold(n_trials=n_trials, confidence=confidence)
+    return {
+        "edge_t_threshold": thr["threshold"],
+        "edge_t_threshold_method": thr["method"],
+        "edge_t_threshold_n_trials": int(n_trials),
+    }
 
 
 def infer_periods_per_year(s: pd.Series) -> float:
@@ -1035,7 +1218,10 @@ def _findings(res: ValidityResult, confidence: float) -> list[Finding]:
 
     d = res.decay
     what = "Alpha" if d["kind"] == "alpha" else "Mean return"
-    if d["kind"] == "alpha" and np.isfinite(d["edge_t_stat"]) and abs(d["edge_t_stat"]) < 1.96:
+    t_edge = d["edge_t_stat"]
+    t_single = float(norm.ppf(1.0 - (1.0 - confidence) / 2.0))
+    t_bar = d.get("edge_t_threshold", t_single)
+    if d["kind"] == "alpha" and np.isfinite(t_edge) and abs(t_edge) < t_single:
         add(
             "ALPHA_NOT_SIGNIFICANT",
             "caution",
@@ -1043,7 +1229,20 @@ def _findings(res: ValidityResult, confidence: float) -> list[Finding]:
             f"{d['edge_t_stat']:.2f}; performance is not distinguishable from "
             f"benchmark exposure (beta {d['beta']:.2f}).",
         )
-    if np.isfinite(d["trend_t_stat"]) and d["trend_t_stat"] < -1.96:
+    elif d["kind"] == "alpha" and np.isfinite(t_edge) and t_single <= t_edge < t_bar:
+        how = (
+            "max-t bootstrap over the trials"
+            if d.get("edge_t_threshold_method") == "max_t_bootstrap"
+            else "Šidák bound for independent trials, conservative if they are correlated"
+        )
+        add(
+            "ALPHA_NOT_SIGNIFICANT_AFTER_SELECTION",
+            "caution",
+            f"Alpha of {d['edge_annual']:.2%}/year has a t-statistic of "
+            f"{t_edge:.2f}. That clears the single-test {t_single:.2f} but not the "
+            f"{t_bar:.2f} required for the best of {s['n_trials']} trials ({how}).",
+        )
+    if np.isfinite(d["trend_t_stat"]) and d["trend_t_stat"] < -t_single:
         add(
             "EDGE_DECAYING",
             "warning",
@@ -1053,16 +1252,21 @@ def _findings(res: ValidityResult, confidence: float) -> list[Finding]:
 
     if res.overfitting is not None:
         pbo = res.overfitting["pbo"]
-        if pbo >= 0.5:
+        base = (
+            f"PBO is {pbo:.1%}: in that share of train/test splits the best "
+            "in-sample variant ranked in the bottom half out-of-sample."
+        )
+        if pbo >= PBO_NO_INFORMATION:
             sev = "warning"
-        elif pbo >= 0.25:
+            base += " In-sample rank carries no information about out-of-sample rank."
+        elif pbo > PBO_REJECT_ABOVE:
             sev = "caution"
+            base += (
+                f" Inconclusive: above the {PBO_REJECT_ABOVE:.0%} rejection level of "
+                "Bailey et al. (2017), and a single-sample PBO in this range is "
+                "common both with and without a skilled variant."
+            )
         else:
             sev = "info"
-        add(
-            "PROBABILITY_OF_BACKTEST_OVERFITTING",
-            sev,
-            f"PBO is {pbo:.1%}: in that share of train/test splits the best "
-            "in-sample variant ranked in the bottom half out-of-sample.",
-        )
+        add("PROBABILITY_OF_BACKTEST_OVERFITTING", sev, base)
     return out

@@ -10,6 +10,11 @@
     "share_psr_ge_95": 0.158,
     "share_dsr_ge_95": 0.012,
     "share_alpha_t_gt_196": 0.126,
+    "share_alpha_t_gt_max_t_bootstrap": 0.015,
+    "share_alpha_t_gt_sidak": 0.004,
+    "median_alpha_t_threshold": 2.8914161975036263,
+    "alpha_t_sidak": 3.3380291721964994,
+    "alpha_t_q975": 2.717787163745196,
     "share_degradation_p_lt_05": 0.145,
     "fixed_share_psr_ge_95": 0.046,
     "fixed_share_alpha_t_gt_196": 0.028,
@@ -20,7 +25,9 @@
     "median_hurdle_annual": 0.30949623643404256,
     "median_pairwise_corr": 0.7926076176843083,
     "median_pbo": 0.5073038073038073,
-    "share_pbo_ge_50": 0.511
+    "share_pbo_ge_50": 0.511,
+    "share_pbo_le_05": 0.014,
+    "share_pbo_lt_25": 0.163
   },
   "drift": {
     "markets": 1000,
@@ -33,6 +40,11 @@
     "share_psr_ge_95": 0.544,
     "share_dsr_ge_95": 0.185,
     "share_alpha_t_gt_196": 0.111,
+    "share_alpha_t_gt_max_t_bootstrap": 0.013,
+    "share_alpha_t_gt_sidak": 0.003,
+    "median_alpha_t_threshold": 2.877391277776657,
+    "alpha_t_sidak": 3.3380291721964994,
+    "alpha_t_q975": 2.6415974676557172,
     "share_degradation_p_lt_05": 0.116,
     "fixed_share_psr_ge_95": 0.27,
     "fixed_share_alpha_t_gt_196": 0.015,
@@ -43,7 +55,9 @@
     "median_hurdle_annual": 0.28152854251239817,
     "median_pairwise_corr": 0.828006481144737,
     "median_pbo": 0.5062548562548562,
-    "share_pbo_ge_50": 0.508
+    "share_pbo_ge_50": 0.508,
+    "share_pbo_le_05": 0.013,
+    "share_pbo_lt_25": 0.16
   },
   "skill": {
     "share_dsr_ge_95_given_skilled_selected": 0.6094091903719913,
@@ -58,6 +72,11 @@
     "share_psr_ge_95": 0.934,
     "share_dsr_ge_95": 0.569,
     "share_alpha_t_gt_196": 0.878,
+    "share_alpha_t_gt_max_t_bootstrap": 0.628,
+    "share_alpha_t_gt_sidak": 0.459,
+    "median_alpha_t_threshold": 2.9045825100382654,
+    "alpha_t_sidak": 3.3380291721964994,
+    "alpha_t_q975": 5.095005543007721,
     "share_degradation_p_lt_05": 0.098,
     "fixed_share_psr_ge_95": 0.048,
     "fixed_share_alpha_t_gt_196": 0.024,
@@ -68,7 +87,9 @@
     "median_hurdle_annual": 0.4545789768226874,
     "median_pairwise_corr": 0.7693190931453168,
     "median_pbo": 0.03348873348873349,
-    "share_pbo_ge_50": 0.059
+    "share_pbo_ge_50": 0.059,
+    "share_pbo_le_05": 0.566,
+    "share_pbo_lt_25": 0.853
   },
   "published_example": {
     "selected": "ma_10_40",

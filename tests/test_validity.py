@@ -256,3 +256,108 @@ class TestValidate:
         a = v.validate(r, n_boot=20).sharpe["sharpe"]
         b = v.validate(r, rf=0.05, n_boot=20).sharpe["sharpe"]
         assert b < a
+
+
+class TestSelectionAdjustedThreshold:
+    def test_single_trial_is_the_normal_quantile(self):
+        res = v.selection_adjusted_t_threshold(n_trials=1)
+        assert res["method"] == "single_test"
+        assert res["threshold"] == pytest.approx(norm.ppf(0.975))
+
+    def test_sidak_for_a_trial_count(self):
+        res = v.selection_adjusted_t_threshold(n_trials=60)
+        assert res["method"] == "sidak"
+        assert res["threshold"] == pytest.approx(norm.ppf(0.975 ** (1 / 60)))
+        assert res["threshold"] == pytest.approx(3.338, abs=1e-3)
+
+    def test_vectorised_intercept_matches_hac_ols(self):
+        from quantstats.validity import core
+
+        rng = np.random.default_rng(3)
+        b = rng.normal(0.0003, 0.01, 800)
+        y = 0.6 * b[:, None] + rng.normal(0.0002, 0.008, (800, 5))
+        alpha, se = core._hac_intercept(y, b)
+        for j in range(5):
+            coef, ref = core._hac_ols(y[:, j], np.column_stack([np.ones(800), b]))
+            assert alpha[j] == pytest.approx(coef[0], rel=1e-9)
+            assert se[j] == pytest.approx(ref[0], rel=1e-9)
+
+    def test_bootstrap_is_above_single_test_and_below_sidak_when_correlated(self):
+        rng = np.random.default_rng(5)
+        idx = pd.bdate_range("2018-01-01", periods=1000)
+        bench = pd.Series(rng.normal(0.0003, 0.01, 1000), index=idx)
+        common = rng.normal(0, 0.01, 1000)
+        trials = pd.DataFrame(
+            {f"t{i}": common + rng.normal(0, 0.003, 1000) for i in range(40)}, index=idx
+        )
+        res = v.selection_adjusted_t_threshold(trials, bench, n_boot=400, seed=1)
+        assert res["method"] == "max_t_bootstrap"
+        assert res["n_trials"] == 40
+        sidak = v.selection_adjusted_t_threshold(n_trials=40)["threshold"]
+        assert norm.ppf(0.975) < res["threshold"] < sidak
+
+    def test_seed_makes_it_reproducible(self):
+        rng = np.random.default_rng(6)
+        trials = pd.DataFrame(rng.normal(0, 0.01, (500, 8)))
+        a = v.selection_adjusted_t_threshold(trials, n_boot=200, seed=2)
+        b = v.selection_adjusted_t_threshold(trials, n_boot=200, seed=2)
+        assert a["threshold"] == b["threshold"]
+
+    def test_validate_reports_threshold_and_method(self):
+        r = _series(n=1260, seed=9)
+        rng = np.random.default_rng(9)
+        bench = pd.Series(rng.normal(0.0003, 0.01, 1260), index=r.index)
+        trials = pd.DataFrame(rng.normal(0, 0.01, (1260, 12)), index=r.index)
+        trials[0] = r
+        with_trials = v.validate(r, bench, trials=trials, n_boot=200).to_dict()["decay"]
+        assert with_trials["edge_t_threshold_method"] == "max_t_bootstrap"
+        assert with_trials["edge_t_threshold"] > norm.ppf(0.975)
+        assert with_trials["edge_t_threshold_n_trials"] == 12
+        count_only = v.validate(r, bench, n_trials=12, n_boot=50).to_dict()["decay"]
+        assert count_only["edge_t_threshold_method"] == "sidak"
+        single = v.validate(r, bench, n_boot=50).to_dict()["decay"]
+        assert single["edge_t_threshold_method"] == "single_test"
+        assert single["edge_t_threshold"] == pytest.approx(norm.ppf(0.975))
+
+    def test_alpha_between_the_two_bars_is_flagged(self):
+        """t clears 1.96 but not the bar for 200 trials."""
+        rng = np.random.default_rng(11)
+        idx = pd.bdate_range("2018-01-01", periods=1260)
+        bench = pd.Series(rng.normal(0.0003, 0.01, 1260), index=idx)
+        noise = rng.normal(0, 0.005, 1260)
+        noise -= noise.mean()
+        target_t = 2.5
+        r = pd.Series(0.3 * bench.to_numpy() + noise, index=idx)
+        t0 = v.decay_analysis(r, bench)["edge_t_stat"]
+        se = v.decay_analysis(r, bench)["edge_annual"] / 252 / t0
+        r = r + (target_t - t0) * se
+        assert v.decay_analysis(r, bench)["edge_t_stat"] == pytest.approx(target_t, abs=0.05)
+        many = {f.code for f in v.validate(r, bench, n_trials=200, n_boot=50).findings}
+        assert "ALPHA_NOT_SIGNIFICANT_AFTER_SELECTION" in many
+        assert "ALPHA_NOT_SIGNIFICANT" not in many
+        one = {f.code for f in v.validate(r, bench, n_trials=1, n_boot=50).findings}
+        assert "ALPHA_NOT_SIGNIFICANT_AFTER_SELECTION" not in one
+
+
+class TestPBOSeverity:
+    @pytest.mark.parametrize(
+        "shift, expected", [(0.0, {"caution", "warning"}), (0.002, {"info"})]
+    )
+    def test_severity_follows_the_published_rejection_level(self, shift, expected):
+        rng = np.random.default_rng(8)
+        idx = pd.bdate_range("2018-01-01", periods=1600)
+        data = rng.normal(0, 0.01, (1600, 40))
+        data[:, 0] += shift
+        trials = pd.DataFrame(data, index=idx)
+        res = v.validate(trials[0], trials=trials, n_boot=50)
+        finding = next(
+            f for f in res.findings if f.code == "PROBABILITY_OF_BACKTEST_OVERFITTING"
+        )
+        assert finding.severity in expected
+        pbo = res.overfitting["pbo"]
+        if pbo <= 0.05:
+            assert finding.severity == "info"
+        elif pbo < 0.5:
+            assert finding.severity == "caution" and "Inconclusive" in finding.message
+        else:
+            assert finding.severity == "warning"

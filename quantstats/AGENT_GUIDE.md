@@ -77,9 +77,10 @@ Arguments that change the answer — get them from the user, do not invent them:
 | `sharpe.min_track_record_length_deflated` | Observations needed for significance | Compare with `sample.n`. `null` means infinite. |
 | `bootstrap.<stat>.low/high` | Confidence interval (stationary bootstrap) | An interval for max drawdown is usually much wider than users expect; say so. |
 | `split.degradation_p_value` | P(seeing this OOS drop by chance) | < 0.05 → performance broke after the split. |
-| `decay.edge_annual`, `decay.edge_t_stat` | Alpha (with benchmark) or mean return | \|t\| < 2 → not distinguishable from zero / from benchmark exposure. |
+| `decay.edge_annual`, `decay.edge_t_stat` | Alpha (with benchmark) or mean return | Compare with `decay.edge_t_threshold`, not with 2. Below it the edge is not distinguishable from zero / from benchmark exposure. |
+| `decay.edge_t_threshold`, `decay.edge_t_threshold_method` | Critical value for `edge_t_stat` given the trials: `single_test` (1.96), `sidak` (only `n_trials` known; conservative) or `max_t_bootstrap` (`trials` passed) | With 60 trials it is near 3, so t = 2.3 on a selected strategy is not evidence of alpha. |
 | `decay.trend_annual_per_year`, `decay.trend_t_stat` | Change in the edge per year | t < −2 → the edge is decaying. |
-| `overfitting.pbo` | Share of train/test splits where the in-sample winner is below median out-of-sample | ≥ 0.5 → selection adds no information. |
+| `overfitting.pbo` | Share of train/test splits where the in-sample winner is below median out-of-sample | ≤ 0.05 → passes the rejection level of Bailey et al. (2017). ≥ 0.5 → selection adds no information. Anything in between is inconclusive: do not report it as a pass. |
 | `findings[]` | `{code, severity, message}` with severity `info` / `caution` / `warning` | Report every `warning` and `caution`. Codes are stable identifiers. |
 
 Keys ending in `_annual` are annualised; other Sharpe values are per-period.

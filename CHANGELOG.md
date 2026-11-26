@@ -1,6 +1,38 @@
 Changelog
 ===========
 
+0.7.0
+-----
+
+**Validity — thresholds that account for selection**
+
+Two readings in ``quantstats.validity`` used cut-offs that were too lenient for
+a strategy chosen among several. Both are measured in
+``docs/articles/selection-bias.md``.
+
+- **Alpha t-statistic.** New ``selection_adjusted_t_threshold``. ``validate``
+  stores its result in ``decay.edge_t_threshold``,
+  ``decay.edge_t_threshold_method`` and ``decay.edge_t_threshold_n_trials``.
+  With ``trials`` it is a studentised max-t stationary bootstrap over all
+  variants and the benchmark (White 2000; Romano & Wolf 2005); with only
+  ``n_trials`` it is the Šidák critical value; with one trial it stays at 1.96.
+- New finding ``ALPHA_NOT_SIGNIFICANT_AFTER_SELECTION`` (caution) when the
+  t-statistic clears 1.96 but not that threshold. ``ALPHA_NOT_SIGNIFICANT`` and
+  ``EDGE_DECAYING`` are unchanged at the default ``confidence=0.95``; at other
+  levels their critical value now follows ``confidence`` instead of a fixed
+  1.96.
+- **PBO.** ``PROBABILITY_OF_BACKTEST_OVERFITTING`` is ``info`` only at or below
+  0.05, the rejection level of Bailey, Borwein, López de Prado & Zhu (2017). It
+  is ``caution`` between 0.05 and 0.5, worded as inconclusive, and ``warning``
+  from 0.5. Previously it was ``info`` below 0.25 and ``caution`` up to 0.5.
+- The validity report shows the required t next to the observed one and draws
+  the PBO gauge against the 5% bar.
+
+*Behaviour change:* a PBO between 0.05 and 0.25 now raises a ``caution``, and
+``validate`` with ``trials`` runs one more bootstrap (about a second for 60
+variants over ten years of daily data). Existing keys and codes keep their
+meaning.
+
 0.6.0
 -----
 

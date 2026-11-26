@@ -60,9 +60,13 @@ Monte Carlo standard errors are at most 1.6 percentage points.
 | PSR ≥ 95% (selection ignored) | 5% | 15.8% | 4.6% | 54.4% | 27.0% | 93.4% |
 | DSR ≥ 95% | ≤ 5% | 1.2% | – | 18.5% | – | 56.9% |
 | Alpha t > 1.96 | 2.5% | 12.6% | 2.8% | 11.1% | 1.5% | 87.8% |
+| Alpha t > max-t bootstrap threshold | ≤ 2.5% | 1.5% | – | 1.3% | – | 62.8% |
+| Alpha t > Šidák threshold (3.34) | ≤ 2.5% | 0.4% | – | 0.3% | – | 45.9% |
 | Sharpe degradation, p < 0.05 | 5% | 14.5% | 5.4% | 11.6% | 5.7% | 9.8% |
 | Median PBO | – | 0.51 | – | 0.51 | – | 0.03 |
 | PBO ≥ 0.5 | – | 51.1% | – | 50.8% | – | 5.9% |
+| PBO < 0.25 | – | 16.3% | – | 16.0% | – | 85.3% |
+| PBO ≤ 0.05 | – | 1.4% | – | 1.3% | – | 56.6% |
 | Median Sharpe, in-sample | – | 0.32 | 0.00 | 0.64 | 0.33 | 1.04 |
 | Median Sharpe, out-of-sample | – | −0.04 | −0.03 | 0.33 | 0.33 | 0.95 |
 
@@ -96,19 +100,47 @@ out-of-sample Sharpe reverts to zero.
 **PBO centres on 0.5 and is widely dispersed.** Under the null the in-sample
 winner is equally likely to land in either half of the out-of-sample ranking,
 so the median is 0.51. On a single market it ranges over most of the unit
-interval, and it is below 0.5 in 49% of them. A PBO near one half means
-selection carried no information; a single PBO somewhat below one half is weak
-evidence of the opposite, because half of all no-skill searches produce one.
+interval: it is below 0.5 in 49% of them and below 0.25 in 16.3%. A PBO near
+one half means selection carried no information, but a single PBO somewhat
+below one half is weak evidence of the opposite.
+
+**The published rejection level separates the two cases.** Bailey, Borwein,
+López de Prado and Zhu (2017) treat PBO as a type I error probability and
+reject above 0.05. A no-skill search gets at or under that level in 1.4% of
+markets; the positive control does in 56.6%. From version 0.7 the report
+follows it: no flag at or below 0.05, a caution worded as inconclusive up to
+0.5, a warning from 0.5. Earlier versions stopped flagging below 0.25, a level
+that one no-skill search in six reaches.
 
 ![Distribution of PBO under the null and in the positive control](selection-bias/fig_pbo.png)
 
 ### The alpha t-statistic is not corrected for selection
 
 The Newey–West t-statistic of alpha exceeds 1.96 in 12.6% of null markets for
-the selected rule, against 2.8% for the fixed rule. The report computes it on
-the chosen series alone, so it inherits the selection effect in full. Treat
-`|t| ≥ 2` on a selected strategy as necessary, not sufficient, and read it
-next to the deflated Sharpe ratio.
+the selected rule, against 2.8% for the fixed rule. It is computed on the
+chosen series alone, so it inherits the selection effect in full. The 97.5%
+quantile of the selected rule's t-statistic under the null is 2.72, not 1.96.
+
+Two corrections are compared, both one-sided at 2.5%:
+
+- **Šidák**, the normal quantile at `0.975^(1/60)`, is 3.34. It assumes 60
+  independent tests. Like the Bonferroni and Holm adjustments in Harvey and
+  Liu (2015), it ignores the dependence between them. With a median correlation of 0.79 between rules it is
+  conservative: 0.4% of null markets cross it, and 45.9% of the positive
+  control.
+- **A studentised max-t stationary bootstrap**, in the spirit of White (2000)
+  and Romano and Wolf (2005). The 60 rules and the market are resampled with
+  the same time indices, each replicate's t-statistics are recentred on the
+  observed alphas, and the threshold is the 97.5% quantile of the largest one.
+  Its median is 2.89. 1.5% of null markets cross it, and 62.8% of the positive
+  control. It is still conservative, because it bounds the largest t-statistic
+  among all rules while the rule tested was chosen by in-sample Sharpe.
+
+From version 0.7 `validate` reports that threshold as `decay.edge_t_threshold`:
+the bootstrap when the returns of every variant are passed, Šidák when only
+their number is, 1.96 for a single trial. A t-statistic between 1.96 and the
+threshold raises `ALPHA_NOT_SIGNIFICANT_AFTER_SELECTION`. The study uses 500
+bootstrap replicates per market; `validate` uses up to 1,000.
 
 ### What the drift scenario shows
 
@@ -119,7 +151,8 @@ that is long part of the time in a market with a Sharpe of 0.46 has a positive
 Sharpe of its own. The fixed rule's median is 0.33.
 
 That Sharpe is not timing ability. Against the market the fixed rule's alpha
-is significant in 1.5% of markets. For a long-biased strategy the relevant
+t-statistic exceeds 1.96 in 1.5% of markets, and the selected rule's clears
+the selection-adjusted threshold in 1.3%. For a long-biased strategy the relevant
 question is the benchmark-relative one, and a deflated Sharpe ratio computed on
 raw returns does not answer it.
 
@@ -151,12 +184,15 @@ generalises to a family of skilled strategies.
 
 ## Reproduce
 
-From a clone of the repository, with `quantstats-pro` 0.6 or later installed:
+From a clone of the repository, with `quantstats-pro` 0.7 or later installed:
 
 ```bash
-python docs/articles/selection-bias/study.py            # under 3 minutes on a laptop
+python docs/articles/selection-bias/study.py            # 15 to 20 minutes on 8 cores
 python docs/articles/selection-bias/study.py --markets 200
 ```
+
+Markets are drawn from one generator in sequence, so the results do not depend
+on `--workers`.
 
 The script writes `results.json` and both figures next to itself. To run the
 same checks on your own search, pass the returns of every variant you tried:
@@ -179,4 +215,7 @@ print(result.summary())
 - Bailey, D. H. and López de Prado, M. (2012). The Sharpe ratio efficient frontier. *Journal of Risk*, 15(2).
 - Bailey, D. H. and López de Prado, M. (2014). The deflated Sharpe ratio: correcting for selection bias, backtest overfitting and non-normality. *Journal of Portfolio Management*, 40(5).
 - Bailey, D. H., Borwein, J. M., López de Prado, M. and Zhu, Q. J. (2017). The probability of backtest overfitting. *Journal of Computational Finance*, 20(4).
+- Harvey, C. R. and Liu, Y. (2015). Backtesting. *Journal of Portfolio Management*, Fall 2015.
 - Newey, W. K. and West, K. D. (1987). A simple, positive semi-definite, heteroskedasticity and autocorrelation consistent covariance matrix. *Econometrica*, 55(3).
+- Romano, J. P. and Wolf, M. (2005). Stepwise multiple testing as formalized data snooping. *Econometrica*, 73(4).
+- White, H. (2000). A reality check for data snooping. *Econometrica*, 68(5).
